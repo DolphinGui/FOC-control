@@ -116,16 +116,16 @@ inline uvh_duty space_vector(dq0 i, radian theta, amps max_current)
   }
 }
 
-struct foc
+struct closed_loop_controller
 {
   // See
   // https://davidmolony.github.io/MESC_Firmware/operation/CONTROL.html#the-foc-pi
   // for gain calculations
-  foc(motor_characteristics m,
-      rpm max_speed,
-      volts vin,
-      float max_duty,
-      triple_hbridge* bridge)
+  closed_loop_controller(motor_characteristics m,
+                         rpm max_speed,
+                         volts vin,
+                         float max_duty,
+                         triple_hbridge* bridge)
     : motor(bridge)
     , i_max(vin / (m.phase_resistance * 2))
     , max_duty(max_duty)

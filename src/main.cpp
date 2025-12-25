@@ -101,7 +101,7 @@ void application()
 
   foc::triple_hbridge hbridge;
   foc::current_sensor u, v, h;
-  foc::foc controller(m, 500.f * rev / minute, 40 * volt, 0.80f, &hbridge);
+  foc::closed_loop_controller controller(m, 500.f * rev / minute, 40 * volt, 0.80f, &hbridge);
   foc::flux_linkage_observer observer(40 * volt, m);
 
   hal::print(console, "Starting Application!\n");
