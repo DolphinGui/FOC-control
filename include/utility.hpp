@@ -3,6 +3,7 @@
 #include "metaprogramming.hpp"
 #include <mp-units/framework.h>
 #include <mp-units/framework/quantity_cast.h>
+#include <mp-units/systems/isq_angle.h>
 #include <mp-units/systems/si.h>
 #include <mp-units/systems/si/math.h>
 #include <mp-units/systems/si/units.h>
@@ -14,8 +15,17 @@
 namespace foc {
 using amps = mp_units::quantity<mp_units::si::ampere, float>;
 using radian = mp_units::quantity<mp_units::si::radian, float>;
-using miliseconds =
+using volts = mp_units::quantity<mp_units::si::volt, float>;
+using ohms = mp_units::quantity<mp_units::si::ohm, float>;
+using henries = mp_units::quantity<mp_units::si::henry, float>;
+using milliseconds =
   mp_units::quantity<mp_units::si::milli<mp_units::si::second>, float>;
+using rpmv = mp_units::quantity<mp_units::angular::revolution /
+                                  mp_units::si::minute / mp_units::si::volt,
+                                float>;
+using rpm =
+  mp_units::quantity<mp_units::angular::revolution / mp_units::si::minute,
+                     float>;
 
 // saturates at [-bounds, bounds]
 template<typename T = float>
@@ -50,9 +60,27 @@ template<auto R1, typename Rep1, auto R2, typename Rep2, auto R3, typename Rep3>
                              ref };
 }
 
+struct uvh
+{
+  amps u, v, h;
+};
+
+struct ab
+{
+  amps a, b;
+};
+
 struct current_sensor
 {
   amps get_current();
+};
+
+struct motor_characteristics
+{
+  ohms phase_resistance;
+  henries phase_inductance;
+  rpmv kv;
+  unsigned pole_pairs;
 };
 
 struct hbridge
@@ -66,6 +94,13 @@ struct hbridge
   // it reaches a threshold value, where
   // it goes low. Incapable of
   void set_duty(uint16_t);
+
+  float get_duty_tristate() const;
+};
+
+struct triple_hbridge
+{
+  hbridge u, v, h;
 };
 
 struct encoder
@@ -91,6 +126,7 @@ struct pid_controller_t
     tmp::maybe<is_I, mp_units::quantity<R * mp_units::si::second, float>>;
 
   using time = mp_units::quantity<mp_units::si::second, float>;
+  pid_controller_t() = default;
   pid_controller_t(float kp,
                    maybe_float<is_I> ki = {},
                    maybe_float<is_D> kd = {},
@@ -98,10 +134,7 @@ struct pid_controller_t
     : k_p(kp)
     , k_i(ki)
     , k_d(kd)
-    , target{}
     , i_max(max)
-    , total_err{}
-    , prev_err{}
   {
   }
 
@@ -130,15 +163,33 @@ struct pid_controller_t
     return result * R;
   }
 
-  float k_p;
-  maybe_float<is_I> k_i;
-  maybe_float<is_D> k_d;
-  unit target;
-  maybe_float<is_I> i_max;
+  void reset()
+  {
+    total_err = {};
+    prev_err = {};
+  }
+
+  void configure(float kp,
+                 maybe_float<is_I> ki = {},
+                 maybe_float<is_D> kd = {},
+                 maybe_float<is_I> max = {})
+  {
+    k_p = kp;
+    k_i = ki;
+    k_d = kd;
+    i_max = max;
+    reset();
+  }
+
+  float k_p{};
+  maybe_float<is_I> k_i{};
+  maybe_float<is_D> k_d{};
+  unit target{};
+  maybe_float<is_I> i_max{};
 
 private:
-  maybe_float<is_I> total_err;
-  maybe_float<is_D> prev_err;
+  maybe_float<is_I> total_err{};
+  maybe_float<is_D> prev_err{};
 };
 
 template<auto R>

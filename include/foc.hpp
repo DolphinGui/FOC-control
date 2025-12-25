@@ -19,23 +19,11 @@ Field Oriented Control uses software to detect the position of the rotor,
 and then orients the stator magnetic field to be 90 degrees of the rotor
 to minimize wasted torque.
 
-"Sensorless" means there is no encoder on the rotor.
-"Open loop" means there is no current sensor, "Closed loop" requires
-a current sensor.
-
-Use sensorless if the rotor encoder is too inaccurate, too slow, or doesn't
-exist. Use open loop if there are no current measurement sensors installed.
-
 */
 namespace foc {
-struct abc
+struct uvh_duty
 {
-  amps a, b, c;
-};
-
-struct abc_duty
-{
-  uint16_t a, b, c;
+  uint16_t u, v, h;
 };
 
 struct dq0
@@ -43,36 +31,22 @@ struct dq0
   amps d, q;
 };
 
-// todo maybe change to a unit generic function??
-inline dq0 clark_park(abc i, radian theta) noexcept
+inline ab clarke(uvh i) noexcept
 {
-  using namespace mp_units;
-  using namespace mp_units::si::unit_symbols;
+  amps a = sqrtf(2.0f / 3.0f) * (i.u - 0.5f * i.v - 0.5f * i.h);
+  amps b = sqrtf(2.0f) / 2.0f * (i.v - i.h);
+  return { a, b };
+}
 
-  /* Park-clark transform is using pre-multiplied cosine/sine operations
-  assuming cosine is really expensive (todo search up lut based cosine maybe)
-  Matrix: [ sqrt(2/3) cos, -1/sqrt(6) cos + 1/sqrt(2) sin, -1/sqrt(6) cos -
-  1/sqrt(2) sin ] [ -sqrt(2/3) sin, 1/sqrt(6) cos + 1/sqrt(2) sin, 1/sqrt(6) sin
-  - 1/sqrt(2) cos ] 1/sqrt(3) [ 1, 1, 1 ]
-  */
-  quantity cs = si::cos(theta);
-  quantity sn = si::sin(theta);
-
-  quantity d = (sqrt(2.0f / 3.0f) * cs) * i.a +
-               (-cs / sqrt(6.0f) + sn / sqrt(2.0f)) * i.b +
-               (-cs / sqrt(6.0f) - sn / sqrt(2.0f)) * i.c;
-
-  quantity q = (-sqrt(2.0f / 3.0f) * sn) * i.a +
-               (cs / sqrt(6.0f) + sn / sqrt(2.0f)) * i.b +
-               (sn / sqrt(6.0f) - cs / sqrt(2.0f)) * i.c;
-
-  // quantity z = (i.a + i.b + i.c) / sqrt(3.0);
-
-  return dq0{ d, q };
+inline dq0 park(ab i, radian theta)
+{
+  auto c = mp_units::si::cos(theta);
+  auto s = mp_units::si::sin(theta);
+  return { c * i.a + s * i.b, -s * i.a + c * i.b };
 }
 
 // todo fix to reduce trig function usage if this proves to be an issue
-inline abc inverse_clark_park(dq0 i, radian theta) noexcept
+inline uvh inverse_clark_park(dq0 i, radian theta) noexcept
 {
   using namespace mp_units;
   using namespace mp_units::si::unit_symbols;
@@ -88,7 +62,7 @@ inline abc inverse_clark_park(dq0 i, radian theta) noexcept
 
 // See table 2 of https://ww1.microchip.com/downloads/en/appnotes/00955a.pdf
 // todo stare at assembly and maybe save 1 trig operation
-inline abc_duty space_vector(dq0 i, radian theta, amps max_current)
+inline uvh_duty space_vector(dq0 i, radian theta, amps max_current)
 {
   using namespace mp_units::si::unit_symbols;
   using namespace mp_units;
@@ -114,27 +88,27 @@ inline abc_duty space_vector(dq0 i, radian theta, amps max_current)
 
   switch (sector.numerical_value_in(one)) {
     case 0:
-      return abc_duty{ t02,
+      return uvh_duty{ t02,
                        static_cast<uint16_t>(t02 + ta),
                        static_cast<uint16_t>(ts - t02) };
     case 1:
-      return abc_duty{ static_cast<uint16_t>(t02 + tb),
+      return uvh_duty{ static_cast<uint16_t>(t02 + tb),
                        t02,
                        static_cast<uint16_t>(ts - t02) };
     case 2:
-      return abc_duty{ static_cast<uint16_t>(ts - t02),
+      return uvh_duty{ static_cast<uint16_t>(ts - t02),
                        t02,
                        static_cast<uint16_t>(t02 + ta) };
     case 3:
-      return abc_duty{ static_cast<uint16_t>(ts - t02),
+      return uvh_duty{ static_cast<uint16_t>(ts - t02),
                        static_cast<uint16_t>(t02 + tb),
                        t02 };
     case 4:
-      return abc_duty{ static_cast<uint16_t>(t02 + ta),
+      return uvh_duty{ static_cast<uint16_t>(t02 + ta),
                        static_cast<uint16_t>(ts - t02),
                        t02 };
     case 5:
-      return abc_duty{ t02,
+      return uvh_duty{ t02,
                        static_cast<uint16_t>(ts - t02),
                        static_cast<uint16_t>(t02 + tb) };
     default:
@@ -142,73 +116,63 @@ inline abc_duty space_vector(dq0 i, radian theta, amps max_current)
   }
 }
 
-template<bool is_sensored>
 struct foc
 {
+  // See
+  // https://davidmolony.github.io/MESC_Firmware/operation/CONTROL.html#the-foc-pi
+  // for gain calculations
+  foc(motor_characteristics m,
+      rpm max_speed,
+      volts vin,
+      float max_duty,
+      triple_hbridge* bridge)
+    : motor(bridge)
+    , i_max(vin / (m.phase_resistance * 2))
+    , max_duty(max_duty)
+  {
+    using namespace mp_units::si::unit_symbols;
+    auto p = (m.phase_inductance * max_speed)
+               .numerical_value_in(mp_units::angular::radian * V / A);
+    auto i = (m.phase_resistance / m.phase_inductance).numerical_value_in(Hz);
+    // todo add saturation current
+    d_pid = zero_pi_controller<mp_units::si::ampere>(p, i, {}, 10.f);
+    q_pid = pi_controller<mp_units::si::ampere>(p, i, {}, 10.f);
+  }
 
-  void set_phases(abc i)
+  void set_phases(uvh i)
   {
     using namespace mp_units;
     auto normalize = [this](auto i) -> float {
-      return (i / max_current).numerical_value_in(one);
+      return (i / i_max).numerical_value_in(one);
     };
-    pwm_a.set_duty_tristate(saturate(normalize(i.a), max_duty));
-    pwm_b.set_duty_tristate(saturate(normalize(i.b), max_duty));
-    pwm_c.set_duty_tristate(saturate(normalize(i.c), max_duty));
+    motor->u.set_duty_tristate(saturate(normalize(i.u), max_duty));
+    motor->v.set_duty_tristate(saturate(normalize(i.v), max_duty));
+    motor->h.set_duty_tristate(saturate(normalize(i.h), max_duty));
   }
 
-  void loop(miliseconds dt)
+  void loop(milliseconds dt, radian rotor, dq0 dq_current)
   {
-    using namespace mp_units;
-    using namespace mp_units::si;
-    radian rotor;
-    if constexpr (is_sensored) {
-      rotor = rotor_encoder.get_angle();
-    } else {
-      rotor = estimate_angle();
-    }
-
     dq0 output;
-    if (is_closed_loop) {
-      amps I_a = curr_a.get_current(), I_b = curr_b.get_current(),
-           I_c = curr_c.get_current();
-      dq0 dq_current = clark_park({ I_a, I_b, I_c }, rotor);
-
-      output.d = d_pid.loop(dt, dq_current.d);
-      output.q = q_pid.loop(dt, dq_current.q);
-    } else {
-      output.d = 0.0f * ampere;
-      output.q = torque_target;
-    }
+    output.d = d_pid.loop(dt, dq_current.d);
+    output.q = q_pid.loop(dt, dq_current.q);
 
     set_phases(inverse_clark_park(output, rotor));
   }
 
   void set_torque(amps current)
   {
-    if (is_closed_loop) {
-      q_pid.target = current;
-    } else {
-      torque_target = current;
-    }
+    q_pid.target = current;
   }
 
 private:
-  radian estimate_angle();
-
-  hbridge pwm_a, pwm_b, pwm_c;
-  current_sensor curr_a, curr_b, curr_c;
-
-  tmp::maybe<is_sensored, encoder> rotor_encoder;
-
-  float max_duty;
+  // todo fix this to strong_ptr
+  triple_hbridge* motor;
 
   zero_pi_controller<mp_units::si::ampere> d_pid;
   pi_controller<mp_units::si::ampere> q_pid;
-  amps torque_target;
 
-  amps max_current;
-  bool is_closed_loop;
+  amps i_max;
+  float max_duty;
 };
 
 }  // namespace foc

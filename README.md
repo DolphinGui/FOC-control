@@ -1,52 +1,10 @@
-# libhal-starter
+# libHAL Field Oriented Control
 
-Before getting started, if you haven't used libhal before, follow the
-[Getting Started](https://libhal.github.io/latest/getting_started/) guide.
+This is the libHAL Field Oriented Control motor control library. It is similar in spirit to
+SimpleFOC, but built for the libHAL ecosystem.
 
-## 📥 Installing Platform Profiles
+## Suggested Reading
 
-For ARM MCU profiles:
-
-```bash
-conan config install -sf conan/profiles/v1 -tf profiles https://github.com/libhal/libhal-arm-mcu.git
-```
-
-`micromod` profiles:
-
-```bash
-conan config install -sf conan/profiles/v1 -tf profiles https://github.com/libhal/libhal-micromod.git
-```
-
-## 🏗️ Building Application
-
-To build the project:
-
-```bash
-conan build . -pr <target_name> -pr <compiler>
-```
-
-For the `lpc4078`
-
-```bash
-conan build . -pr lpc4078 -pr arm-gcc-12.3
-```
-
-For the STM32F103 MicroMod V4:
-
-```bash
-conan build . -pr mod-stm32f1-v4 -pr arm-gcc-12.3
-```
-
-## ✅ Supported platforms
-
-- lpc4078
-- lpc4074
-- stm32f103c8
-- micromod
-  - lpc4078 MicroMod V5
-  - stm32f103c8 MicroMod V4
-
-## 🤔 Wondering how is this repo organized?
-
-See our [`ARCHITECTURE.md`](./ARCHITECTURE.md) to learn about the important
-files in the project, what they do, and quirks about how they work.
+- <https://ww1.microchip.com/downloads/aemDocuments/documents/MCU32/ApplicationNotes/ApplicationNotes/Sensorless-Field-Oriented-Control-for-a-Permanent-Magnet-Synchronous-Motor-Using-Sliding-Mode-DS00004398.pdf>
+- <https://toshiba.semicon-storage.com/content/dam/toshiba-ss-v3/master/en/semiconductor/design-development/innovationcentre/whitepapers/TCM0568_ENG.pdf>
+- <https://ww1.microchip.com/downloads/en/appnotes/00955a.pdf>

@@ -19,6 +19,10 @@
 
 #include <resource_list.hpp>
 
+#include "angle.hpp"
+#include "foc.hpp"
+#include "utility.hpp"
+
 // This is only global so that the terminate handler can use the resources
 // provided.
 resource_list resources{};
@@ -81,7 +85,9 @@ int main()
 
 void application()
 {
-  using namespace std::chrono_literals;
+  using namespace mp_units::angular::unit_symbols;
+  using namespace mp_units::si;
+  using namespace mp_units;
 
   // Calling `value()` on the optional resources will perform a check and if the
   // resource is not set, it will throw a std::bad_optional_access exception.
@@ -91,23 +97,25 @@ void application()
   auto& clock = *resources.clock.value();
   auto& console = *resources.console.value();
 
+  foc::motor_characteristics m;
+
+  foc::triple_hbridge hbridge;
+  foc::current_sensor u, v, h;
+  foc::foc controller(m, 500.f * rev / minute, 40 * volt, 0.80f, &hbridge);
+  foc::flux_linkage_observer observer(40 * volt, m);
+
   hal::print(console, "Starting Application!\n");
-  hal::print(console, "Will reset after ~10 seconds\n");
 
-  for (int i = 0; i < 10; i++) {
-    // Print message
-    hal::print(console, "Hello, World\n");
-
-    // Toggle LED
-    led.level(true);
-    hal::delay(clock, 500ms);
-
-    led.level(false);
-    hal::delay(clock, 500ms);
+  hal::u64 prev_time = clock.uptime();
+  for (;;) {
+    hal::u64 now = clock.uptime();
+    hal::u64 delta_time = now - prev_time;
+    prev_time = now;
+    quantity<milli<second>, float> dt = delta_time / clock.frequency() * second;
+    foc::uvh i{ u.get_current(), v.get_current(), h.get_current() };
+    foc::ab a = foc::clarke(i);
+    foc::radian rotor = observer.estimate_angle(dt, hbridge, a);
+    foc::dq0 d = foc::park(a, rotor);
+    controller.loop(dt, rotor, d);
   }
-
-  hal::print(console, "Resetting!\n");
-  hal::delay(clock, 100ms);
-
-  resources.reset();
 }
