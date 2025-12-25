@@ -12,6 +12,7 @@
 
 #include "metaprogramming.hpp"
 #include "utility.hpp"
+#include "vectors.hpp"
 /*
 General FOC rundown:
 
@@ -21,24 +22,25 @@ to minimize wasted torque.
 
 */
 namespace foc {
+
 struct uvh_duty
 {
   uint16_t u, v, h;
 };
 
-struct dq0
-{
-  amps d, q;
-};
+using uvh_v = uvh<V>;
+using dq0_v = dq0<V>;
 
-inline ab clarke(uvh i) noexcept
+template<auto R>
+inline ab<R> clarke(uvh<R> i) noexcept
 {
   amps a = sqrtf(2.0f / 3.0f) * (i.u - 0.5f * i.v - 0.5f * i.h);
   amps b = sqrtf(2.0f) / 2.0f * (i.v - i.h);
   return { a, b };
 }
 
-inline dq0 park(ab i, radian theta)
+template<auto R>
+inline dq0<R> park(ab<R> i, radians theta)
 {
   auto c = mp_units::si::cos(theta);
   auto s = mp_units::si::sin(theta);
@@ -46,29 +48,29 @@ inline dq0 park(ab i, radian theta)
 }
 
 // todo fix to reduce trig function usage if this proves to be an issue
-inline uvh inverse_clark_park(dq0 i, radian theta) noexcept
+inline uvh_v inverse_clark_park(dq0_v i, radians theta) noexcept
 {
   using namespace mp_units;
   using namespace mp_units::si::unit_symbols;
-  radian phase_offset = 2.0f / 3.0f * M_PI * si::radian;
+  radians phase_offset = 2.0f / 3.0f * M_PI * si::radian;
 
-  amps a = si::cos(theta) * i.d - si::sin(theta) * i.q;
-  amps b =
+  volts u = si::cos(theta) * i.d - si::sin(theta) * i.q;
+  volts v =
     si::cos(theta - phase_offset) * i.q - si::sin(theta - phase_offset) * i.d;
-  amps c =
+  volts h =
     si::cos(theta + phase_offset) * i.q - si::sin(theta + phase_offset) * i.d;
-  return { a, b, c };
+  return uvh_v{ u, v, h };
 }
 
 // See table 2 of https://ww1.microchip.com/downloads/en/appnotes/00955a.pdf
 // todo stare at assembly and maybe save 1 trig operation
-inline uvh_duty space_vector(dq0 i, radian theta, amps max_current)
+inline uvh_duty space_vector(dq0<A> i, radians theta, amps max_current)
 {
   using namespace mp_units::si::unit_symbols;
   using namespace mp_units;
   using duty = quantity<one, float>;
 
-  radian ang = si::atan2(i.q, i.d) + theta;
+  radians ang = si::atan2(i.q, i.d) + theta;
   float k = 2.0f / sqrtf(3.0f);
   duty m = hypot(i.q, i.d) / max_current * k;
   if (m.numerical_value_in(one) > 1.0f) {
@@ -127,32 +129,32 @@ struct closed_loop_controller
                          float max_duty,
                          triple_hbridge* bridge)
     : motor(bridge)
-    , i_max(vin / (m.phase_resistance * 2))
+    , v_in(vin)
     , max_duty(max_duty)
   {
+    using namespace mp_units;
     using namespace mp_units::si::unit_symbols;
-    auto p = (m.phase_inductance * max_speed)
-               .numerical_value_in(mp_units::angular::radian * V / A);
-    auto i = (m.phase_resistance / m.phase_inductance).numerical_value_in(Hz);
+    auto p = (m.phase_inductance * max_speed / angular::radian).in(V / A);
+    auto i = (m.phase_resistance / m.phase_inductance).in(Hz)*ohm;
     // todo add saturation current
-    d_pid = zero_pi_controller<mp_units::si::ampere>(p, i, {}, 10.f);
-    q_pid = pi_controller<mp_units::si::ampere>(p, i, {}, 10.f);
+    d_pid = zero_pi_controller<A, V>(p, i, {}, 10.f * A * s);
+    q_pid = pi_controller<A, V>(p, i, {}, 10.f * A * s);
   }
 
-  void set_phases(uvh i)
+  void set_phases(uvh_v i)
   {
     using namespace mp_units;
-    auto normalize = [this](auto i) -> float {
-      return (i / i_max).numerical_value_in(one);
+    auto normalize = [this](auto v) -> float {
+      return (v / v_in).numerical_value_in(one);
     };
     motor->u.set_duty_tristate(saturate(normalize(i.u), max_duty));
     motor->v.set_duty_tristate(saturate(normalize(i.v), max_duty));
     motor->h.set_duty_tristate(saturate(normalize(i.h), max_duty));
   }
 
-  void loop(milliseconds dt, radian rotor, dq0 dq_current)
+  void loop(milliseconds dt, radians rotor, dq0<A> dq_current)
   {
-    dq0 output;
+    dq0_v output;
     output.d = d_pid.loop(dt, dq_current.d);
     output.q = q_pid.loop(dt, dq_current.q);
 
@@ -168,11 +170,57 @@ private:
   // todo fix this to strong_ptr
   triple_hbridge* motor;
 
-  zero_pi_controller<mp_units::si::ampere> d_pid;
-  pi_controller<mp_units::si::ampere> q_pid;
+  zero_pi_controller<mp_units::si::ampere, mp_units::si::volt> d_pid;
+  pi_controller<mp_units::si::ampere, mp_units::si::volt> q_pid;
 
-  amps i_max;
+  volts v_in;
   float max_duty;
+};
+
+struct open_loop_controller
+{
+  open_loop_controller(motor_characteristics m,
+                       volts vin,
+                       float max_duty,
+                       triple_hbridge* bridge)
+    : motor(bridge)
+    , i_max(vin)
+    , max_duty(max_duty)
+    , phase_resistance(m.phase_resistance)
+  {
+  }
+
+  void set_phases(uvh_v i)
+  {
+    using namespace mp_units;
+    auto normalize = [this](auto i) -> float {
+      return (i / i_max).numerical_value_in(one);
+    };
+    motor->u.set_duty_tristate(saturate(normalize(i.u), max_duty));
+    motor->v.set_duty_tristate(saturate(normalize(i.v), max_duty));
+    motor->h.set_duty_tristate(saturate(normalize(i.h), max_duty));
+  }
+
+  void loop(radians rotor)
+  {
+    dq0_v output{};
+    output.q = target * 2 * phase_resistance;
+
+    set_phases(inverse_clark_park(output, rotor));
+  }
+
+  void set_torque(amps current)
+  {
+    target = current;
+  }
+
+private:
+  // todo fix this to strong_ptr
+  triple_hbridge* motor;
+  volts i_max;
+  float max_duty;
+  amps target;
+  ohms phase_resistance;
 };
 
 }  // namespace foc

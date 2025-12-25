@@ -1,6 +1,5 @@
 #pragma once
 
-#include "metaprogramming.hpp"
 #include <mp-units/framework.h>
 #include <mp-units/framework/quantity_cast.h>
 #include <mp-units/systems/isq_angle.h>
@@ -14,7 +13,7 @@
 
 namespace foc {
 using amps = mp_units::quantity<mp_units::si::ampere, float>;
-using radian = mp_units::quantity<mp_units::si::radian, float>;
+using radians = mp_units::quantity<mp_units::si::radian, float>;
 using volts = mp_units::quantity<mp_units::si::volt, float>;
 using ohms = mp_units::quantity<mp_units::si::ohm, float>;
 using henries = mp_units::quantity<mp_units::si::henry, float>;
@@ -26,6 +25,10 @@ using rpmv = mp_units::quantity<mp_units::angular::revolution /
 using rpm =
   mp_units::quantity<mp_units::angular::revolution / mp_units::si::minute,
                      float>;
+
+constexpr static auto A = mp_units::si::ampere;
+constexpr static auto V = mp_units::si::volt;
+constexpr static auto mS = mp_units::si::milli<mp_units::si::second>;
 
 // saturates at [-bounds, bounds]
 template<typename T = float>
@@ -59,16 +62,6 @@ template<auto R1, typename Rep1, auto R2, typename Rep2, auto R3, typename Rep3>
                                     &quo->numerical_value_ref_in(unit2)),
                              ref };
 }
-
-struct uvh
-{
-  amps u, v, h;
-};
-
-struct ab
-{
-  amps a, b;
-};
 
 struct current_sensor
 {
@@ -105,32 +98,39 @@ struct triple_hbridge
 
 struct encoder
 {
-  radian get_angle();
+  radians get_angle();
 };
 
 // pid_controller really needs to be compiled with -ffast-math, because
 // on ARM without fpu, with const_target=0 a negation is not necessarily
 // "safe". The precision isn't really necessary anyways for PID operations
-template<auto R,
+template<auto In,
+         auto Out,
+         auto Time = mp_units::si::second,
          bool is_I = true,
          bool is_D = true,
-         tmp::optional<float> const_target = {}>
+         tmp::optional<mp_units::quantity<In, float>> const_target = {}>
 struct pid_controller_t
 {
-  using unit = mp_units::quantity<R, float>;
-  template<bool b>
-  using maybe_float = tmp::maybe<b, float>;
-  template<bool b>
-  using maybe_unit = tmp::maybe<b, unit>;
-  using maybe_unit_int =
-    tmp::maybe<is_I, mp_units::quantity<R * mp_units::si::second, float>>;
-
   using time = mp_units::quantity<mp_units::si::second, float>;
+  template<bool b, typename T>
+  using maybe = tmp::maybe<b, T>;
+
+  constexpr static auto gain = Out / In;
+  constexpr static auto integrated_gain = Out / (In * Time);
+  constexpr static auto integral = In * Time;
+  constexpr static auto derivative_gain = Out / (In / Time);
+
+  using gain_q = mp_units::quantity<gain, float>;
+  using igain_q = mp_units::quantity<integrated_gain, float>;
+  using dgain_q = mp_units::quantity<derivative_gain, float>;
+  using integral_input = mp_units::quantity<integral, float>;
+
   pid_controller_t() = default;
-  pid_controller_t(float kp,
-                   maybe_float<is_I> ki = {},
-                   maybe_float<is_D> kd = {},
-                   maybe_float<is_I> max = {})
+  pid_controller_t(gain_q kp,
+                   maybe<is_I, igain_q> ki = {},
+                   maybe<is_D, dgain_q> kd = {},
+                   maybe<is_I, integral_input> max = {})
     : k_p(kp)
     , k_i(ki)
     , k_d(kd)
@@ -138,29 +138,30 @@ struct pid_controller_t
   {
   }
 
-  unit loop(time delta_time, unit current)
+  mp_units::quantity<Out, float> loop(time dt,
+                                      mp_units::quantity<In, float> current)
   {
     using namespace mp_units::si;
-    float err;
-    float dt = delta_time.numerical_value_in(second);
+    using namespace mp_units;
+    quantity<In, float> err;
     if constexpr (const_target.exists) {
-      err = const_target.value - current.numerical_value_in(R);
+      err = const_target.value - current;
     } else {
-      err = (target - current).numerical_value_in(R);
+      err = target - current;
     }
-    float result = k_p * err;
+    quantity result = k_p * err;
     if constexpr (is_I) {
       total_err = saturate(total_err + (err * dt), i_max);
       result += k_i * total_err;
     }
 
     if constexpr (is_D) {
-      float change_err = (err - prev_err) / dt;
+      quantity change_err = (err - prev_err) / dt;
       result += k_d * change_err;
       prev_err = err;
     }
 
-    return result * R;
+    return result * Out;
   }
 
   void reset()
@@ -169,10 +170,10 @@ struct pid_controller_t
     prev_err = {};
   }
 
-  void configure(float kp,
-                 maybe_float<is_I> ki = {},
-                 maybe_float<is_D> kd = {},
-                 maybe_float<is_I> max = {})
+  void configure(gain_q kp,
+                 maybe<is_I, igain_q> ki = {},
+                 maybe<is_D, dgain_q> kd = {},
+                 maybe<is_I, integral_input> max = {})
   {
     k_p = kp;
     k_i = ki;
@@ -181,30 +182,36 @@ struct pid_controller_t
     reset();
   }
 
-  float k_p{};
-  maybe_float<is_I> k_i{};
-  maybe_float<is_D> k_d{};
-  unit target{};
-  maybe_float<is_I> i_max{};
+  gain_q k_p{};
+  maybe<is_I, igain_q> k_i = {};
+  maybe<is_D, dgain_q> k_d = {};
+  maybe<!const_target.exists, mp_units::quantity<In, float>> target{};
+  maybe<is_I, integral_input> i_max{};
 
 private:
-  maybe_float<is_I> total_err{};
-  maybe_float<is_D> prev_err{};
+  maybe<is_I, integral_input> total_err{};
+  maybe<is_D, mp_units::quantity<In, float>> prev_err{};
 };
 
-template<auto R>
-using pid_controller = pid_controller_t<R>;
-template<auto R>
-using pi_controller = pid_controller_t<R, true, false>;
-template<auto R>
-using zero_pi_controller = pid_controller_t<R, true, false>;
+template<auto In, auto Out>
+using pid_controller = pid_controller_t<In, Out>;
+template<auto In, auto Out>
+using pi_controller =
+  pid_controller_t<In, Out, mp_units::si::second, true, false>;
+template<auto In, auto Out>
+using zero_pi_controller =
+  pid_controller_t<In, Out, mp_units::si::second, true, false>;
 
+[[maybe_unused]]
 inline void test_pid()
 {
+  using namespace mp_units;
   using namespace mp_units::si;
   using namespace mp_units::si::unit_symbols;
-  pid_controller<rad> pid(1.0, 1.0, -1.0, 10.0);
+  pid_controller<rad, rad> pid(
+    1.0f * one, 1.0f / second, 1.0f * second, 10.0f * second * rad);
   pid.target = 180 * deg;
+  [[maybe_unused]]
   auto out = pid.loop(0.10 * ms, 0 * deg);
 }
 }  // namespace foc
