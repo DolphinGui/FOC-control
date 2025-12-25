@@ -1,6 +1,7 @@
 #pragma once
 
 #include "metaprogramming.hpp"
+#include <mp-units/framework.h>
 #include <mp-units/framework/quantity_cast.h>
 #include <mp-units/systems/si.h>
 #include <mp-units/systems/si/math.h>
@@ -13,6 +14,8 @@
 namespace foc {
 using amps = mp_units::quantity<mp_units::si::ampere, float>;
 using radian = mp_units::quantity<mp_units::si::radian, float>;
+using miliseconds =
+  mp_units::quantity<mp_units::si::milli<mp_units::si::second>, float>;
 
 // saturates at [-bounds, bounds]
 template<typename T = float>
@@ -25,14 +28,44 @@ inline T saturate(T f, T bounds)
   return f;
 }
 
+template<auto R1, typename Rep1, auto R2, typename Rep2, auto R3, typename Rep3>
+  requires requires(Rep1 v1, Rep2 v2, Rep3 v3) {
+    get_common_reference(R1, R2);
+    requires requires { remquo(v1, v2, &v3); } ||
+               requires { std::remquo(v1, v2, &v3); };
+  }
+[[nodiscard]] constexpr mp_units::QuantityOf<get_quantity_spec(R1)> auto remquo(
+  mp_units::quantity<R1, Rep1> const& x,
+  mp_units::quantity<R2, Rep2> const& y,
+  mp_units::quantity<R3, Rep3>* quo) noexcept
+{
+  constexpr auto ref = get_common_reference(R1, R2);
+  constexpr auto unit = get_unit(ref);
+  constexpr auto ref2 = get_common_reference(R3, R1 / R2);
+  constexpr auto unit2 = mp_units::get_unit(ref2);
+  using std::remquo;
+  return mp_units::quantity{ remquo(x.numerical_value_in(unit),
+                                    y.numerical_value_in(unit),
+                                    &quo->numerical_value_ref_in(unit2)),
+                             ref };
+}
+
 struct current_sensor
 {
   amps get_current();
 };
 
-struct phase_pwm
+struct hbridge
 {
-  void set_duty(float);
+  // positive values PWM the high side,
+  // negative values PWM the low side, 0
+  // does nothing.
+  void set_duty_tristate(float);
+
+  // does PWM where it is high until
+  // it reaches a threshold value, where
+  // it goes low. Incapable of
+  void set_duty(uint16_t);
 };
 
 struct encoder

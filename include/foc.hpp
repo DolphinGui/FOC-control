@@ -1,8 +1,11 @@
 #pragma once
 
+#include <limits>
+#include <mp-units/framework.h>
 #include <mp-units/framework/quantity_cast.h>
 #include <mp-units/systems/si.h>
 #include <mp-units/systems/si/math.h>
+#include <mp-units/systems/si/unit_symbols.h>
 #include <mp-units/systems/si/units.h>
 
 #include <mp-units/math.h>
@@ -30,6 +33,11 @@ struct abc
   amps a, b, c;
 };
 
+struct abc_duty
+{
+  uint16_t a, b, c;
+};
+
 struct dq0
 {
   amps d, q;
@@ -50,70 +58,106 @@ inline dq0 clark_park(abc i, radian theta) noexcept
   quantity cs = si::cos(theta);
   quantity sn = si::sin(theta);
 
-  quantity d = (sqrt(2.0 / 3.0) * cs) * i.a +
-               (-cs / sqrt(6.0) + sn / sqrt(2.0)) * i.b +
-               (-cs / sqrt(6.0) - sn / sqrt(2.0)) * i.c;
+  quantity d = (sqrt(2.0f / 3.0f) * cs) * i.a +
+               (-cs / sqrt(6.0f) + sn / sqrt(2.0f)) * i.b +
+               (-cs / sqrt(6.0f) - sn / sqrt(2.0f)) * i.c;
 
-  quantity q = (-sqrt(2.0 / 3.0) * sn) * i.a +
-               (cs / sqrt(6.0) + sn / sqrt(2.0)) * i.b +
-               (sn / sqrt(6.0) - cs / sqrt(2.0)) * i.c;
+  quantity q = (-sqrt(2.0f / 3.0f) * sn) * i.a +
+               (cs / sqrt(6.0f) + sn / sqrt(2.0f)) * i.b +
+               (sn / sqrt(6.0f) - cs / sqrt(2.0f)) * i.c;
 
   // quantity z = (i.a + i.b + i.c) / sqrt(3.0);
 
   return dq0{ d, q };
 }
 
+// todo fix to reduce trig function usage if this proves to be an issue
 inline abc inverse_clark_park(dq0 i, radian theta) noexcept
 {
   using namespace mp_units;
   using namespace mp_units::si::unit_symbols;
-  quantity phase_offset = 2.0 / 3.0 * M_PI * si::radian;
+  radian phase_offset = 2.0f / 3.0f * M_PI * si::radian;
 
-  quantity a = si::cos(theta) * i.d - si::sin(theta) * i.q;
-  quantity b =
+  amps a = si::cos(theta) * i.d - si::sin(theta) * i.q;
+  amps b =
     si::cos(theta - phase_offset) * i.q - si::sin(theta - phase_offset) * i.d;
-  quantity c =
+  amps c =
     si::cos(theta + phase_offset) * i.q - si::sin(theta + phase_offset) * i.d;
   return { a, b, c };
 }
-/* Space vector is nice because it uses far fewer trig operations
-   and has higher power, but has less smooth commutation. */
-inline abc space_vector(dq0 i, radian theta)
+
+// See table 2 of https://ww1.microchip.com/downloads/en/appnotes/00955a.pdf
+// todo stare at assembly and maybe save 1 trig operation
+inline abc_duty space_vector(dq0 i, radian theta, amps max_current)
 {
   using namespace mp_units::si::unit_symbols;
   using namespace mp_units;
-  radian ang = si::atan2(i.q, i.d) + theta;
-  amps mag = hypot(i.q, i.d);
+  using duty = quantity<one, float>;
 
-  if (ang >= -30 * deg && ang < 30 * deg) {
-    return abc{ mag, -mag / 2, -mag / 2 };
-  } else if (ang >= 30 * deg && ang < 90 * deg) {
-    return abc{ mag / 2, mag / 2, -mag };
-  } else if (ang >= 90 * deg && ang < 150 * deg) {
-    return abc{ -mag / 2, mag, -mag / 2 };
-  } else if (ang >= 150 * deg && ang < 210 * deg) {
-    return abc{ -mag, mag / 2, mag / 2 };
-  } else if (ang >= 210 * deg && ang < 270 * deg) {
-    return abc{ -mag / 2, -mag / 2, mag };
-  } else {
-    //(ang >= 270 * deg && ang < 330 * deg)
-    return abc{ mag / 2, -mag, mag / 2 };
+  radian ang = si::atan2(i.q, i.d) + theta;
+  float k = 2.0f / sqrtf(3.0f);
+  duty m = hypot(i.q, i.d) / max_current * k;
+  if (m.numerical_value_in(one) > 1.0f) {
+    m = 1.0f * one;
+  }
+
+  quantity<one, int> sector;
+  quantity psi = remquo(ang, (60.0f * deg).in(rad), &sector);
+
+  duty a_duty = m * si::sin(60 * deg - psi);
+  duty b_duty = m * si::sin(psi);
+
+  constexpr static uint16_t ts = std::numeric_limits<uint16_t>::max();
+  uint16_t ta = a_duty.numerical_value_in(one) * ts;
+  uint16_t tb = b_duty.numerical_value_in(one) * ts;
+  uint16_t t02 = (ts - ta - tb) / 2;
+
+  switch (sector.numerical_value_in(one)) {
+    case 0:
+      return abc_duty{ t02,
+                       static_cast<uint16_t>(t02 + ta),
+                       static_cast<uint16_t>(ts - t02) };
+    case 1:
+      return abc_duty{ static_cast<uint16_t>(t02 + tb),
+                       t02,
+                       static_cast<uint16_t>(ts - t02) };
+    case 2:
+      return abc_duty{ static_cast<uint16_t>(ts - t02),
+                       t02,
+                       static_cast<uint16_t>(t02 + ta) };
+    case 3:
+      return abc_duty{ static_cast<uint16_t>(ts - t02),
+                       static_cast<uint16_t>(t02 + tb),
+                       t02 };
+    case 4:
+      return abc_duty{ static_cast<uint16_t>(t02 + ta),
+                       static_cast<uint16_t>(ts - t02),
+                       t02 };
+    case 5:
+      return abc_duty{ t02,
+                       static_cast<uint16_t>(ts - t02),
+                       static_cast<uint16_t>(t02 + tb) };
+    default:
+      std::terminate();
   }
 }
 
-template<bool is_closed_loop, bool is_sensored>
+template<bool is_sensored>
 struct foc
 {
 
   void set_phases(abc i)
   {
     using namespace mp_units;
-    pwm_a.set_duty(saturate(i.a.numerical_value_in(si::ampere), max_duty));
-    pwm_b.set_duty(saturate(i.b.numerical_value_in(si::ampere), max_duty));
-    pwm_c.set_duty(saturate(i.c.numerical_value_in(si::ampere), max_duty));
+    auto normalize = [this](auto i) -> float {
+      return (i / max_current).numerical_value_in(one);
+    };
+    pwm_a.set_duty_tristate(saturate(normalize(i.a), max_duty));
+    pwm_b.set_duty_tristate(saturate(normalize(i.b), max_duty));
+    pwm_c.set_duty_tristate(saturate(normalize(i.c), max_duty));
   }
 
-  void loop(float dt)
+  void loop(miliseconds dt)
   {
     using namespace mp_units;
     using namespace mp_units::si;
@@ -125,28 +169,24 @@ struct foc
     }
 
     dq0 output;
-    if constexpr (is_closed_loop) {
+    if (is_closed_loop) {
       amps I_a = curr_a.get_current(), I_b = curr_b.get_current(),
            I_c = curr_c.get_current();
       dq0 dq_current = clark_park({ I_a, I_b, I_c }, rotor);
 
-      output.d =
-        d_pid.loop(dt, dq_current.d.numerical_value_in(si::ampere)) * ampere;
-
-      output.q =
-        q_pid.loop(dt, dq_current.q.numerical_value_in(si::ampere)) * ampere;
+      output.d = d_pid.loop(dt, dq_current.d);
+      output.q = q_pid.loop(dt, dq_current.q);
     } else {
       output.d = 0.0f * ampere;
       output.q = torque_target;
     }
 
-    abc phases = inverse_clark_park(output, rotor);
-    set_phases(phases);
+    set_phases(inverse_clark_park(output, rotor));
   }
 
   void set_torque(amps current)
   {
-    if constexpr (is_closed_loop) {
+    if (is_closed_loop) {
       q_pid.target = current;
     } else {
       torque_target = current;
@@ -156,19 +196,19 @@ struct foc
 private:
   radian estimate_angle();
 
-  phase_pwm pwm_a, pwm_b, pwm_c;
-  tmp::maybe<is_closed_loop, current_sensor> curr_a, curr_b, curr_c;
+  hbridge pwm_a, pwm_b, pwm_c;
+  current_sensor curr_a, curr_b, curr_c;
 
   tmp::maybe<is_sensored, encoder> rotor_encoder;
 
   float max_duty;
 
-  tmp::maybe<is_closed_loop, zero_pi_controller<mp_units::si::ampere>> d_pid;
-  tmp::maybe<is_closed_loop, pi_controller<mp_units::si::ampere>> q_pid;
-  tmp::maybe<!is_closed_loop, amps> torque_target;
-};
+  zero_pi_controller<mp_units::si::ampere> d_pid;
+  pi_controller<mp_units::si::ampere> q_pid;
+  amps torque_target;
 
-using open_sensored_foc = foc<false, true>;
-using closed_sensorless_foc = foc<true, false>;
+  amps max_current;
+  bool is_closed_loop;
+};
 
 }  // namespace foc
