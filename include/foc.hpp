@@ -30,23 +30,6 @@ struct uvh_duty
 
 using uvh_v = uvh<V>;
 using dq0_v = dq0<V>;
-
-template<auto R>
-inline ab<R> clarke(uvh<R> i) noexcept
-{
-  amps a = sqrtf(2.0f / 3.0f) * (i.u - 0.5f * i.v - 0.5f * i.h);
-  amps b = sqrtf(2.0f) / 2.0f * (i.v - i.h);
-  return { a, b };
-}
-
-template<auto R>
-inline dq0<R> park(ab<R> i, radians theta)
-{
-  auto c = mp_units::si::cos(theta);
-  auto s = mp_units::si::sin(theta);
-  return { c * i.a + s * i.b, -s * i.a + c * i.b };
-}
-
 // todo fix to reduce trig function usage if this proves to be an issue
 inline uvh_v inverse_clark_park(dq0_v i, radians theta) noexcept
 {

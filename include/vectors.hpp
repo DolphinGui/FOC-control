@@ -112,4 +112,20 @@ auto operator-(Vec<R1> v1, Vec<R2> v2)
   return Vec<unit>{ x - a, y - b };
 }
 
+template<auto R>
+inline ab<R> clarke(uvh<R> i) noexcept
+{
+  amps a = sqrtf(2.0f / 3.0f) * (i.u - 0.5f * i.v - 0.5f * i.h);
+  amps b = sqrtf(2.0f) / 2.0f * (i.v - i.h);
+  return { a, b };
+}
+
+template<auto R>
+inline dq0<R> park(ab<R> i, radians theta)
+{
+  auto c = mp_units::si::cos(theta);
+  auto s = mp_units::si::sin(theta);
+  return { c * i.a + s * i.b, -s * i.a + c * i.b };
+}
+
 }  // namespace foc
