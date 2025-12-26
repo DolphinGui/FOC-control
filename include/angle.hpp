@@ -73,50 +73,70 @@ private:
 // based on https://doi.org/10.1016/j.aej.2021.12.005
 struct hfi_observer
 {
-  // a startup procedure is necessary to initialize rotor to 0 at beginning.
-  // could do something clever with saturation negative edge resolution, but
-  // for now we don't need to be clever and can just do dumb initilization
-  hfi_observer() = default;
 
-  volts inject(milliseconds dt)
+  // todo: extensive modelling regarding phase gain and stuff
+  // using only motor characteristics
+  hfi_observer(motor_characteristics m)
+    : lp_filter(1 * mS, injection_period)
   {
-    using namespace mp_units::si::unit_symbols;
-    volts injection = 0 * V;
-    time_since_last_pulse += dt;
-    if (time_since_last_pulse < duty * injection_period) {
-      injection = injection_mag;
-    } else if (time_since_last_pulse > injection_period) {
-      time_since_last_pulse = 0 * s;
-    }
-    return injection;
+    r4 = pow<4>(m.phase_resistance);
+    r2w2 = pow<2>(m.phase_resistance) * pow<2>(injection_frequency);
   }
-
   /*
   HFI, despite its name, only injects pulses at low frequencies (~1kHz),
   but when the motor is moving at a slow rate (< 100 rotations per second)
   the bEMF is too small to meaningfully interfere with hfi.
 
   HFI pulses are injected on the d axis of dq0 to reduce torque disturbances.
+
   */
   std::pair<volts, radians> loop(milliseconds dt, dq0<A> i)
   {
     using namespace mp_units::si::unit_symbols;
     using namespace mp_units;
     time_since_last_pulse += dt;
-    if (time_since_last_pulse < duty * injection_period) {
+    rotor += dt * speed_err;
+    float rot =
+      (time_since_last_pulse / injection_period).numerical_value_in(one);
+    if (rot < duty) {
+      // start of period
       prev_i = i;
+      sampled = false;
+      begin_sample = time_since_last_pulse;
       return { injection_mag, rotor };
-    } else if (time_since_last_pulse < injection_period) {
+    } else if (rot < 0.5f) {
+      // end of positive pulse
+      if (!sampled && rot < duty + sample_delay) {
+        di = i - prev_i;
+        i_end = i;
+        delta_t = time_since_last_pulse - begin_sample;
+        sampled = true;
+      }
+    } else if (rot < 0.5f + duty) {
+      prev_i = i;
+      sampled = false;
+      begin_sample = time_since_last_pulse;
+      return { -injection_mag, rotor };
+    } else if (rot < 0.5f + duty + sample_delay) {
+      if (!sampled) {
+        dq0<A> neg_di = i - prev_i;
+        positive = -di.d > neg_di.d;
+        if (!positive) {
+          di = { neg_di.d, neg_di.q };
+          i_end = i;
+          delta_t = time_since_last_pulse - begin_sample;
+        }
+        sampled = true;
+      }
+    } else if (rot < 1.0f) {
       // just polled after pulse is finished
-      auto L = estimate_inductance(dt, i - prev_i);
-      auto mag = mp::hypot(L.q, L.d);
-      auto ang = si::asin(L.q / mag);
-      // The Sun paper seems? to be implementing a speed controller, and does
-      // some weird stuff with output PI and lowpass filtering. Not really sure
-      // how to do that but this should be good enough in theory.
-      rotor = ang;
+      if (!calculated) {
+        speed_err = err_controller.loop(dt, estimate_err(dt));
+        calculated = true;
+      }
     } else {
       time_since_last_pulse = 0 * s;
+      calculated = false;
     }
     return { 0 * V, rotor };
   }
@@ -134,23 +154,52 @@ private:
     // when t ~ 0, exp(-Rt/L) ~ 1
     // L ~ V / di/dt
     auto di_dt = (di / dt);
-    quantity<H, float> d = injection_mag / di_dt.d;
-    quantity<H, float> q = injection_mag / di_dt.q;
+    quantity<H, float> d = injection_mag / abs(di_dt.d);
+    quantity<H, float> q = injection_mag / abs(di_dt.q);
     return { d, q };
+  }
+
+  radians estimate_err(milliseconds dt)
+  {
+    auto L = estimate_inductance(dt, di);
+    auto delta_l = (L.d - L.q) / 2;
+    auto ld2 = mp::pow<2>(L.d);
+    auto lq2 = mp::pow<2>(L.q);
+
+    auto zmag2 = 2 * mp::sqrt(r4 + 2 * r2w2 * (ld2 + lq2) + w4 * ld2 * lq2);
+    ohms delta_Z = delta_l * injection_frequency;
+    amps i_hat = injection_mag * delta_Z / zmag2;
+    return lp_filter.loop(si::asin(i_end.q / i_hat));
   }
 
   constexpr static mp::quantity<si::radian / si::second, float>
     injection_frequency = 1000 * 2 * M_PI * si::radian / si::second;
+  // this is stupid but pow is not constexpr so bite me
+  constexpr static mp::quantity<mp::pow<4>(si::radian / si::second), float> w4 =
+    injection_frequency * injection_frequency * injection_frequency *
+    injection_frequency;
 
   constexpr static milliseconds injection_period =
     (2 * M_PI * si::radian) / (injection_frequency);
 
   constexpr static volts injection_mag = 10 * si::volt;
+
   constexpr static float duty = 0.01f;
+  constexpr static float sample_delay = 0.001f;
 
   radians rotor{};
-  dq0<A> prev_i{};
+  dq0<A> prev_i{}, di{}, i_end{};
   milliseconds time_since_last_pulse{};
+  milliseconds begin_sample;
+  milliseconds delta_t;
+  mp::quantity<si::radian / mS, float> speed_err{};
+  mp::quantity<mp::pow<4>(si::ohm), float> r4{};
+  mp::quantity<mp::pow<2>(si::ohm) / mp::pow<2>(mS), float> r2w2{};
+  lowpass<si::radian> lp_filter;
+  zero_pi_controller<si::radian, si::radian / mS> err_controller;
+  bool positive = true;
+  bool sampled = false;
+  bool calculated = false;
 };
 
 }  // namespace foc

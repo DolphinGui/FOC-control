@@ -202,6 +202,25 @@ template<auto In, auto Out>
 using zero_pi_controller =
   pid_controller_t<In, Out, mp_units::si::second, true, false>;
 
+template<auto R>
+struct lowpass
+{
+  constexpr lowpass(milliseconds time_constant, milliseconds sample_period)
+  {
+    a = sample_period / (time_constant + sample_period);
+  }
+  mp_units::quantity<R, float> loop(mp_units::quantity<R, float> x)
+  {
+    auto y = a * x + (1 - a) * prev;
+    prev = y;
+    return y;
+  }
+
+private:
+  mp_units::quantity<R, float> prev;
+  mp_units::quantity<mp_units::one, float> a;
+};
+
 [[maybe_unused]]
 inline void test_pid()
 {
