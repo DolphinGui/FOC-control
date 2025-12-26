@@ -125,11 +125,10 @@ struct closed_loop_controller
   // for gain calculations
   closed_loop_controller(motor_characteristics m,
                          rpm max_speed,
-                         volts vin,
                          float max_duty,
                          triple_hbridge* bridge)
     : motor(bridge)
-    , v_in(vin)
+    , v_in(m.v_in)
     , max_duty(max_duty)
   {
     using namespace mp_units;
@@ -180,11 +179,10 @@ private:
 struct open_loop_controller
 {
   open_loop_controller(motor_characteristics m,
-                       volts vin,
                        float max_duty,
                        triple_hbridge* bridge)
     : motor(bridge)
-    , i_max(vin)
+    , i_max(m.v_in)
     , max_duty(max_duty)
     , phase_resistance(m.phase_resistance)
   {

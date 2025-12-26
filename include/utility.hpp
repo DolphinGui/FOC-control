@@ -70,6 +70,7 @@ struct current_sensor
 
 struct motor_characteristics
 {
+  volts v_in;
   ohms phase_resistance;
   henries phase_inductance;
   rpmv kv;
