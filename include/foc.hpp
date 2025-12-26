@@ -134,10 +134,13 @@ struct closed_loop_controller
     motor->h.set_duty_tristate(saturate(normalize(i.h), max_duty));
   }
 
-  void loop(milliseconds dt, radians rotor, dq0<A> dq_current)
+  void loop(milliseconds dt,
+            radians rotor,
+            dq0<A> dq_current,
+            volts d_inject = {})
   {
     dq0_v output;
-    output.d = d_pid.loop(dt, dq_current.d);
+    output.d = d_pid.loop(dt, dq_current.d) + d_inject;
     output.q = q_pid.loop(dt, dq_current.q);
 
     set_phases(inverse_clark_park(output, rotor));

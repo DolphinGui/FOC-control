@@ -24,8 +24,8 @@ inline ab<V> clarke(uvh<V> v) noexcept
 // https://davidmolony.github.io/MESC_Firmware/operation/CONTROL.html#the-sensorless-observer
 struct flux_linkage_observer
 {
-  constexpr flux_linkage_observer(volts vin, motor_characteristics m)
-    : v_in(vin)
+  constexpr flux_linkage_observer(motor_characteristics m)
+    : v_in(m.v_in)
     , r_m(m.phase_resistance)
     , l_m(m.phase_inductance)
   {
@@ -90,55 +90,62 @@ struct hfi_observer
   HFI pulses are injected on the d axis of dq0 to reduce torque disturbances.
 
   */
-  std::pair<volts, radians> loop(milliseconds dt, dq0<A> i)
+  std::pair<volts, radians> loop(milliseconds dt, ab<A> current)
   {
     using namespace mp_units::si::unit_symbols;
     using namespace mp_units;
-    time_since_last_pulse += dt;
+    auto i = park(current, rotor);
+    time += dt;
     rotor += dt * speed_err;
-    float rot =
-      (time_since_last_pulse / injection_period).numerical_value_in(one);
-    if (rot < duty) {
+    float dut = (time / injection_period).numerical_value_in(one);
+    if (dut < duty) {
       // start of period
       prev_i = i;
       sampled = false;
-      begin_sample = time_since_last_pulse;
+      begin_sample = time;
       return { injection_mag, rotor };
-    } else if (rot < 0.5f) {
+    } else if (dut < 0.5f) {
       // end of positive pulse
-      if (!sampled && rot < duty + sample_delay) {
+      if (!sampled && dut < duty + sample_delay) {
         di = i - prev_i;
         i_end = i;
-        delta_t = time_since_last_pulse - begin_sample;
+        delta_t = time - begin_sample;
         sampled = true;
       }
-    } else if (rot < 0.5f + duty) {
+    } else if (dut < 0.5f + duty) {
       prev_i = i;
       sampled = false;
-      begin_sample = time_since_last_pulse;
+      begin_sample = time;
       return { -injection_mag, rotor };
-    } else if (rot < 0.5f + duty + sample_delay) {
+    } else if (dut < 0.5f + duty + sample_delay) {
       if (!sampled) {
         dq0<A> neg_di = i - prev_i;
-        positive = -di.d > neg_di.d;
+        positive = abs(di.d) > abs(neg_di.d);
         if (!positive) {
           di = { neg_di.d, neg_di.q };
           i_end = i;
-          delta_t = time_since_last_pulse - begin_sample;
+          delta_t = time - begin_sample;
         }
         sampled = true;
       }
-    } else if (rot < 1.0f) {
+    } else if (dut < 1.0f) {
       // just polled after pulse is finished
       if (!calculated) {
-        speed_err = err_controller.loop(dt, estimate_err(dt));
+        update_controller(dt, estimate_err(dt));
         calculated = true;
       }
     } else {
-      time_since_last_pulse = 0 * s;
+      time = 0 * s;
       calculated = false;
     }
     return { 0 * V, rotor };
+  }
+
+  void update(milliseconds dt, radians r)
+  {
+    auto e = r - rotor;
+    rotor = r;
+    update_controller(dt, e);
   }
 
 private:
@@ -169,7 +176,16 @@ private:
     auto zmag2 = 2 * mp::sqrt(r4 + 2 * r2w2 * (ld2 + lq2) + w4 * ld2 * lq2);
     ohms delta_Z = delta_l * injection_frequency;
     amps i_hat = injection_mag * delta_Z / zmag2;
-    return lp_filter.loop(si::asin(i_end.q / i_hat));
+    auto e = si::asin(i_end.q / i_hat);
+    if (!positive) {
+      e += 180.0f * si::degree;
+    }
+    return e;
+  }
+
+  void update_controller(milliseconds dt, radians error)
+  {
+    speed_err = err_controller.loop(dt, lp_filter.loop(error));
   }
 
   constexpr static mp::quantity<si::radian / si::second, float>
@@ -189,7 +205,7 @@ private:
 
   radians rotor{};
   dq0<A> prev_i{}, di{}, i_end{};
-  milliseconds time_since_last_pulse{};
+  milliseconds time{};
   milliseconds begin_sample;
   milliseconds delta_t;
   mp::quantity<si::radian / mS, float> speed_err{};
