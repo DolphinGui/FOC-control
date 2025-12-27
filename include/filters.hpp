@@ -119,6 +119,11 @@ struct lowpass
     return y;
   }
 
+  mp_units::quantity<R, float> operator()(mp_units::quantity<R, float> x)
+  {
+    return loop(x);
+  }
+
 private:
   mp_units::quantity<R, float> prev;
   mp_units::quantity<mp_units::one, float> a;
