@@ -2,9 +2,9 @@
 
 #include <tuple>
 
+#include "filters.hpp"
 #include "utility.hpp"
 #include "vectors.hpp"
-#include "filters.hpp"
 #include <mp-units/framework/dimension.h>
 #include <mp-units/systems/angular/units.h>
 #include <mp-units/systems/si/math.h>
@@ -75,9 +75,12 @@ struct hfi_observer
   // using only motor characteristics
   hfi_observer(motor_characteristics m)
     : lp_filter(1 * mS, injection_period)
+    // this is a dumb heruistic that hopefully won't blow up
+    , err_controller(1.0f / mS, 0.1f / mS / si::second)
   {
     r4 = pow<4>(m.phase_resistance);
     r2w2 = pow<2>(m.phase_resistance) * pow<2>(injection_frequency);
+    // err_controller =
   }
   /*
   HFI, despite its name, only injects pulses at low frequencies (~1kHz),
