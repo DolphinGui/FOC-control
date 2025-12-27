@@ -4,6 +4,7 @@
 
 #include "utility.hpp"
 #include "vectors.hpp"
+#include "filters.hpp"
 #include <mp-units/framework/dimension.h>
 #include <mp-units/systems/angular/units.h>
 #include <mp-units/systems/si/math.h>

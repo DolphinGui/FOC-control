@@ -13,6 +13,7 @@
 #include "metaprogramming.hpp"
 #include "utility.hpp"
 #include "vectors.hpp"
+#include "filters.hpp"
 /*
 General FOC rundown:
 
