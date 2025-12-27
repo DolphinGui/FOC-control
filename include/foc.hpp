@@ -35,7 +35,7 @@ inline uvh_v inverse_clark_park(dq0_v i, radians theta) noexcept
 {
   using namespace mp_units;
   using namespace mp_units::si::unit_symbols;
-  radians phase_offset = 2.0f / 3.0f * M_PI * si::radian;
+  radians phase_offset = 60 * si::degree;
 
   volts u = si::cos(theta) * i.d - si::sin(theta) * i.q;
   volts v =
@@ -116,7 +116,7 @@ struct closed_loop_controller
   {
     using namespace mp_units;
     using namespace mp_units::si::unit_symbols;
-    auto p = (m.phase_inductance * max_speed / angular::radian).in(V / A);
+    auto p = (m.phase_inductance * max_speed / rad).in(V / A);
     auto i = (m.phase_resistance / m.phase_inductance).in(Hz)*ohm;
     // todo add saturation current
     d_pid = zero_pi_controller<A, V>(p, i, {}, 10.f * A * s);

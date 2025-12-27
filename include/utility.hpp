@@ -12,6 +12,13 @@
 #include "metaprogramming.hpp"
 
 namespace foc {
+// mp_units does not have an si-compatible revolution, so here it is
+inline constexpr struct revolution final
+  : mp_units::named_unit<"rev",
+                         mp_units::mag<2> * mp_units::mag<mp_units::π> *
+                           mp_units::si::radian>
+{
+} revolution;
 using amps = mp_units::quantity<mp_units::si::ampere, float>;
 using radians = mp_units::quantity<mp_units::si::radian, float>;
 using volts = mp_units::quantity<mp_units::si::volt, float>;
@@ -19,12 +26,10 @@ using ohms = mp_units::quantity<mp_units::si::ohm, float>;
 using henries = mp_units::quantity<mp_units::si::henry, float>;
 using milliseconds =
   mp_units::quantity<mp_units::si::milli<mp_units::si::second>, float>;
-using rpmv = mp_units::quantity<mp_units::angular::revolution /
-                                  mp_units::si::minute / mp_units::si::volt,
-                                float>;
-using rpm =
-  mp_units::quantity<mp_units::angular::revolution / mp_units::si::minute,
+using rpmv =
+  mp_units::quantity<revolution / mp_units::si::minute / mp_units::si::volt,
                      float>;
+using rpm = mp_units::quantity<revolution / mp_units::si::minute, float>;
 
 constexpr static auto A = mp_units::si::ampere;
 constexpr static auto V = mp_units::si::volt;

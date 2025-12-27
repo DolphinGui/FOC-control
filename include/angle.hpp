@@ -34,11 +34,7 @@ struct flux_linkage_observer
     // if this is accurate
     using namespace mp_units;
     using namespace mp_units::si::unit_symbols;
-    using namespace mp_units::angular::unit_symbols;
-    quantity a = m.kv.in(mp_units::angular::radian / mp_units::si::second /
-                         mp_units::si::volt) /
-                 mp_units::angular::radian;
-    flux_linkage = 1 / (a * m.pole_pairs);
+    flux_linkage = 1 / (m.kv / rad * m.pole_pairs);
   }
 
   radians estimate_angle(milliseconds dt, triple_hbridge const& motor, ab<A> i)
