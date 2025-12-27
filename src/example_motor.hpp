@@ -16,19 +16,19 @@ enum struct control_mode : uint8_t
   vel,
   accel
 };
+
 using namespace mp_units::si::unit_symbols;
+using namespace foc::unit_symbols;
 struct sensorless_motor
 {
-  constexpr static auto rpm = foc::revolution / mp_units::si::minute;
-  constexpr static auto rpmv =
-    foc::revolution / mp_units::si::minute / mp_units::si::volt;
+  constexpr static auto rpm = rev / min;
+  constexpr static auto rpmv = rev / min / V;
   // based on
   // https://www.cubemars.com/product/ak60-39-v3-0-kv80-robotic-actuator.html
   constexpr static foc::motor_characteristics characteristics =
-    foc::motor_characteristics{ .v_in = 40 * mp_units::si::volt,
-                                .phase_resistance = 0.300f * mp_units::si::ohm,
-                                .phase_inductance =
-                                  0.335f * mp_units::si::henry,
+    foc::motor_characteristics{ .v_in = 40 * V,
+                                .phase_resistance = 0.300f * Ω,
+                                .phase_inductance = 0.335f * H,
                                 .kv = 80.0f * rpmv,
                                 .pole_pairs = 14 };
 
@@ -36,7 +36,7 @@ struct sensorless_motor
 
   constexpr static float gear_ratio = 39.0f;
   sensorless_motor()
-    : controller(characteristics, 2730 * rpm, 0.1125f, &hbridge)
+    : torque_controller(characteristics, 2730 * rpm, 0.1125f, &hbridge)
     , observer(characteristics)
     , hfi(characteristics)
     , mode(control_mode::pos)
@@ -77,20 +77,23 @@ struct sensorless_motor
     if (iteration > 100) {
       iteration = 0;
       auto v = (rotor - prev_angle) / dt;
+      if (slow) {
+        v -= hfi.get_speed_err();
+      }
       slow = v < 628 * rad / s;
       switch (mode) {
         case control_mode::pos:
           w_pid.target = theta_pid.loop(dt, output_encoder.get_angle());
           [[fallthrough]];
         case control_mode::vel:
-          controller.set_torque(w_pid.loop(dt, v));
+          torque_controller.set_torque(w_pid.loop(dt, v));
           prev_angle = rotor;
           [[fallthrough]];
         case control_mode::accel:
           break;
       }
     }
-    controller.loop(dt, rotor, foc::park(a, rotor), injection_voltage);
+    torque_controller.loop(dt, rotor, foc::park(a, rotor), injection_voltage);
     iteration += 1;
   }
 
@@ -109,23 +112,20 @@ struct sensorless_motor
   void set_torque(mp_units::quantity<N * m, float> t)
   {
     mode = control_mode::accel;
-    controller.set_torque(t / kt);
+    torque_controller.set_torque(t / kt);
   }
 
 private:
   foc::triple_hbridge hbridge;
   foc::current_sensor u, v, h;
-  foc::closed_loop_controller controller;
+  foc::closed_loop_controller torque_controller;
   foc::flux_linkage_observer observer;
   foc::hfi_observer hfi;
   foc::encoder output_encoder;
 
-  constexpr static auto ang = mp_units::si::radian;
-  constexpr static auto vel = mp_units::si::radian / mp_units::si::second;
-
-  foc::pid_controller<ang, vel> theta_pid;
-  foc::pid_controller<vel, foc::A> w_pid;
-  mp_units::quantity<ang, float> prev_angle;
+  foc::pid_controller<rad, rad / ms> theta_pid;
+  foc::pid_controller<rad / ms, A> w_pid;
+  mp_units::quantity<rad, float> prev_angle;
   unsigned iteration{};
   control_mode mode;
   bool slow = true;

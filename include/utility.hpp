@@ -19,6 +19,9 @@ inline constexpr struct revolution final
                            mp_units::si::radian>
 {
 } revolution;
+namespace unit_symbols {
+constexpr static auto rev = revolution;
+}
 using amps = mp_units::quantity<mp_units::si::ampere, float>;
 using radians = mp_units::quantity<mp_units::si::radian, float>;
 using volts = mp_units::quantity<mp_units::si::volt, float>;
