@@ -16,13 +16,12 @@ enum struct control_mode : uint8_t
   vel,
   accel
 };
-
+using namespace mp_units::si::unit_symbols;
 struct sensorless_motor
 {
-  constexpr static auto rpm =
-    mp_units::angular::revolution / mp_units::si::minute;
+  constexpr static auto rpm = foc::revolution / mp_units::si::minute;
   constexpr static auto rpmv =
-    mp_units::angular::revolution / mp_units::si::minute / mp_units::si::volt;
+    foc::revolution / mp_units::si::minute / mp_units::si::volt;
   // based on
   // https://www.cubemars.com/product/ak60-39-v3-0-kv80-robotic-actuator.html
   constexpr static foc::motor_characteristics characteristics =
@@ -33,6 +32,9 @@ struct sensorless_motor
                                 .kv = 80.0f * rpmv,
                                 .pole_pairs = 14 };
 
+  constexpr static auto kt = 0.12f * N * m / A;
+
+  constexpr static float gear_ratio = 39.0f;
   sensorless_motor()
     : controller(characteristics, 2730 * rpm, 0.1125f, &hbridge)
     , observer(characteristics)
@@ -78,7 +80,7 @@ struct sensorless_motor
       slow = v < 628 * rad / s;
       switch (mode) {
         case control_mode::pos:
-          w_pid.target = theta_pid.loop(dt, rotor);
+          w_pid.target = theta_pid.loop(dt, output_encoder.get_angle());
           [[fallthrough]];
         case control_mode::vel:
           controller.set_torque(w_pid.loop(dt, v));
@@ -94,6 +96,20 @@ struct sensorless_motor
 
   void set_pos(foc::radians angle)
   {
+    mode = control_mode::pos;
+    theta_pid.target = angle;
+  }
+
+  void set_vel(mp_units::quantity<rpm, float> vel)
+  {
+    mode = control_mode::vel;
+    w_pid.target = vel * gear_ratio;
+  }
+
+  void set_torque(mp_units::quantity<N * m, float> t)
+  {
+    mode = control_mode::accel;
+    controller.set_torque(t / kt);
   }
 
 private:
@@ -102,6 +118,7 @@ private:
   foc::closed_loop_controller controller;
   foc::flux_linkage_observer observer;
   foc::hfi_observer hfi;
+  foc::encoder output_encoder;
 
   constexpr static auto ang = mp_units::si::radian;
   constexpr static auto vel = mp_units::si::radian / mp_units::si::second;

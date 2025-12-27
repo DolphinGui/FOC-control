@@ -144,6 +144,11 @@ struct hfi_observer
     update_controller(dt, e);
   }
 
+  mp::quantity<si::radian / mS, float> get_speed_err() const
+  {
+    return speed_err;
+  }
+
 private:
   constexpr static auto H = mp_units::si::henry;
   static dq0<H> estimate_inductance(milliseconds dt, dq0<A> di)
