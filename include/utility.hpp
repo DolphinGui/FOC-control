@@ -85,6 +85,9 @@ struct motor_characteristics
   unsigned pole_pairs;
 };
 
+template<auto U>
+struct uvh;
+
 struct hbridge
 {
   // positive values PWM the high side,
@@ -103,6 +106,13 @@ struct hbridge
 struct triple_hbridge
 {
   hbridge u, v, h;
+  void set_duty(uvh<mp_units::one>);
+};
+
+struct triple_current_sensor
+{
+  current_sensor u, v, w;
+  uvh<mp_units::si::ampere> get_current();
 };
 
 struct encoder

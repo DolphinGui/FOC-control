@@ -2,18 +2,13 @@
 
 #include <limits>
 #include <mp-units/framework.h>
-#include <mp-units/framework/quantity_cast.h>
-#include <mp-units/systems/si.h>
-#include <mp-units/systems/si/math.h>
-#include <mp-units/systems/si/unit_symbols.h>
-#include <mp-units/systems/si/units.h>
-
 #include <mp-units/math.h>
+#include <mp-units/systems/si.h>
 
+#include "filters.hpp"
 #include "metaprogramming.hpp"
 #include "utility.hpp"
 #include "vectors.hpp"
-#include "filters.hpp"
 /*
 General FOC rundown:
 
@@ -31,21 +26,6 @@ struct uvh_duty
 
 using uvh_v = uvh<V>;
 using dq0_v = dq0<V>;
-// todo fix to reduce trig function usage if this proves to be an issue
-inline uvh_v inverse_clark_park(dq0_v i, radians theta) noexcept
-{
-  using namespace mp_units;
-  using namespace mp_units::si::unit_symbols;
-  radians phase_offset = 60 * si::degree;
-
-  volts u = si::cos(theta) * i.d - si::sin(theta) * i.q;
-  volts v =
-    si::cos(theta - phase_offset) * i.q - si::sin(theta - phase_offset) * i.d;
-  volts h =
-    si::cos(theta + phase_offset) * i.q - si::sin(theta + phase_offset) * i.d;
-  return uvh_v{ u, v, h };
-}
-
 // See table 2 of https://ww1.microchip.com/downloads/en/appnotes/00955a.pdf
 // todo stare at assembly and maybe save 1 trig operation
 inline uvh_duty space_vector(dq0<A> i, radians theta, amps max_current)
