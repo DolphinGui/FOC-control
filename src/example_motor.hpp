@@ -35,26 +35,6 @@ struct sensorless_motor
   constexpr static auto kt = 0.12f * N * m / A;
 
   constexpr static float gear_ratio = 39.0f;
-  sensorless_motor()
-    : torque_controller(characteristics, 2730 * rpm, 0.1125f, &hbridge)
-    , observer(characteristics)
-    , hfi(characteristics)
-    , mode(control_mode::pos)
-  {
-  }
-
-  // There are an infinite amount of very clever and interesting ways to startup
-  // a motor involving hfi, alignment, etc... These ways are too hard to think
-  // about and don't matter too much anyways. The 39:1 gear reduction means even
-  // a 180 degree realignment will result in a 5 degree jitter on startup.
-
-  void startup(hal::steady_clock& clk)
-  {
-    hbridge.u.set_duty_tristate(0.05f);
-    using namespace std::chrono_literals;
-    hal::delay(clk, 100ms);
-    hbridge.u.set_duty_tristate(0.0f);
-  }
 
   void loop(std::chrono::duration<float> delta_time)
   {
@@ -62,12 +42,12 @@ struct sensorless_motor
     using namespace mp_units::si;
     using namespace mp_units;
     quantity<milli<second>, float> dt = delta_time;
-    foc::uvh i{ u.get_current(), v.get_current(), h.get_current() };
+    auto i = shunts.get_current();
     foc::ab a = foc::clarke(i);
     foc::radians rotor;
     foc::volts injection_voltage{};
     if (slow) {
-      auto [v, r] = hfi.loop(dt, a);
+      auto [v, r] = hfi.loop(dt, foc::park(a, hfi.get_angle()).q);
       injection_voltage = v;
       rotor = r;
     } else {
@@ -115,13 +95,41 @@ struct sensorless_motor
     torque_controller.set_torque(t / kt);
   }
 
+  sensorless_motor create(hal::steady_clock& clk)
+  {
+    foc::triple_hbridge hbridge;
+    foc::triple_current_sensor shunts;
+    auto [r, s] =
+      foc::hfi_observer::initialization(clk, hbridge, shunts, characteristics);
+    foc::hfi_observer hfi(characteristics, s, r, 100 * us);
+
+    return sensorless_motor(std::move(hbridge), std::move(shunts), {}, r, s);
+  }
+
 private:
+  sensorless_motor(foc::triple_hbridge&& h,
+                   foc::triple_current_sensor&& i,
+                   foc::encoder&& e,
+                   foc::radians rotor,
+                   foc::amps saliency)
+    : hbridge(std::move(h))
+    , shunts(std::move(i))
+    , output_encoder(std::move(e))
+    , torque_controller(characteristics, 2730 * rpm, 0.1125f, &hbridge)
+    , observer(characteristics)
+    , hfi(characteristics, saliency, rotor, 100 * us)
+    , theta_pid(1.0f / ms, 0.1f / ms / s)
+    , w_pid(1.0f * A * ms, 0.1f * A * ms / s)
+    , mode(control_mode::pos)
+  {
+  }
+
   foc::triple_hbridge hbridge;
-  foc::current_sensor u, v, h;
+  foc::triple_current_sensor shunts;
+  foc::encoder output_encoder;
   foc::closed_loop_controller torque_controller;
   foc::flux_linkage_observer observer;
   foc::hfi_observer hfi;
-  foc::encoder output_encoder;
 
   foc::pid_controller<rad, rad / ms> theta_pid;
   foc::pid_controller<rad / ms, A> w_pid;

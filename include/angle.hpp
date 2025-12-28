@@ -212,6 +212,11 @@ struct hfi_observer
     return speed_err;
   }
 
+  radians get_angle() const
+  {
+    return rotor;
+  }
+
 private:
   constexpr static auto H = mp_units::si::henry;
 
