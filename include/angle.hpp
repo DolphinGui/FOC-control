@@ -1,13 +1,18 @@
 #pragma once
 
+#include <libhal-util/steady_clock.hpp>
+#include <mp-units/framework.h>
+#include <mp-units/systems/si/units.h>
+#include <stdexcept>
 #include <tuple>
 
 #include "filters.hpp"
 #include "utility.hpp"
 #include "vectors.hpp"
+#include <libhal/steady_clock.hpp>
 #include <mp-units/framework/dimension.h>
 #include <mp-units/systems/angular/units.h>
-#include <mp-units/systems/si/math.h>
+#include <mp-units/systems/si.h>
 
 namespace foc {
 
@@ -70,75 +75,129 @@ private:
 // based on https://doi.org/10.1016/j.aej.2021.12.005
 struct hfi_observer
 {
-
-  // todo: extensive modelling regarding phase gain and stuff
-  // using only motor characteristics
-  hfi_observer(motor_characteristics m)
-    : lp_filter(1 * mS, injection_period)
+  using saliency = mp_units::quantity<mp_units::si::ampere>;
+  /*
+  Saliency, funnily enough, is just a constant that is a part of the
+  motor characteristics. This means that saliency is in effect swallowed
+  by the PI controller, so just use a best effort guess of what saliency
+  should be and tune from there.
+  */
+  hfi_observer(motor_characteristics const& m,
+               saliency k_s,
+               radians rotor,
+               milliseconds average_dt)
+    : rotor(rotor)
+    , k_s(k_s)
+    , lp_filter(injection_period, average_dt)
     // this is a dumb heruistic that hopefully won't blow up
     , err_controller(1.0f / mS, 0.1f / mS / si::second)
   {
-    r4 = pow<4>(m.phase_resistance);
-    r2w2 = pow<2>(m.phase_resistance) * pow<2>(injection_frequency);
-    // err_controller =
   }
+
+  static std::pair<radians, saliency> initialization(
+    hal::steady_clock& clk,
+    triple_hbridge& motor,
+    triple_current_sensor shunts,
+    motor_characteristics const& c)
+  {
+    using namespace mp_units;
+    using namespace mp_units::si::unit_symbols;
+    using namespace std::chrono_literals;
+    auto rotor = initial_angle(clk, motor, shunts, c);
+    // e^6 ~ 99.%, this is probably good enough
+    auto settle_time = mp_units::to_chrono_duration(
+      (c.phase_inductance / c.phase_resistance * 6.0f).force_in<hal::u64>(ns));
+    // V/L * e^(-Rt/L) ~= V/L when -Rt/L ~= 0, find when e^(-Rt/L) = 99% and
+    // determine sample time based on motor characteristics
+    auto dt = (-c.phase_inductance / c.phase_resistance * log(0.99));
+    auto sample_time = mp_units::to_chrono_duration(dt.force_in<hal::u64>(ns));
+
+    // settle stator
+    motor.set_duty({});
+    hal::delay(clk, settle_time);
+
+    // auto f = clk.frequency() * Hz;
+
+    // cut off the current and measure settle time
+    auto const measure_settle = [&]() {
+      motor.set_duty({});
+      auto start = clk.uptime();
+      auto i = park(clarke(shunts.get_current()), rotor).d;
+      while (abs(i) > 50 * mA) {
+        hal::delay(clk, 100us);
+        i = park(clarke(shunts.get_current()), rotor).d;
+      }
+      return clk.uptime() - start;
+    };
+
+    // sample positive inductance
+    motor.set_duty(inverse_clark_park(dq0<one>{ 0.20f * one, {} }, rotor));
+    hal::delay(clk, settle_time);
+    auto t_p = measure_settle();
+
+    motor.set_duty({});
+    hal::delay(clk, settle_time);
+
+    // sample negative inducatance
+    motor.set_duty(inverse_clark_park(dq0<one>{ -0.20f * one, {} }, rotor));
+    hal::delay(clk, settle_time);
+    auto t_n = measure_settle();
+
+    motor.set_duty({});
+    hal::delay(clk, settle_time);
+
+    // sample inductance of d-axis
+    motor.set_duty(inverse_clark_park(dq0<one>{ 0.20f * one, {} }, rotor));
+    hal::delay(clk, sample_time);
+    auto i_d = park(clarke(shunts.get_current()), rotor).d;
+    auto L_d = c.v_in / (i_d / dt);
+
+    motor.set_duty({});
+    hal::delay(clk, settle_time);
+
+    // sample inductance of q-axis
+    motor.set_duty(inverse_clark_park(dq0<one>{ {}, 0.20f * one }, rotor));
+    hal::delay(clk, sample_time);
+    auto i_q = park(clarke(shunts.get_current()), rotor).q;
+    auto L_q = c.v_in / (i_q / dt);
+
+    auto delta_L = (L_d - L_q) / 2;
+    auto r_s = c.phase_resistance;
+    auto w_h = injection_frequency;
+    auto z_d = hypot(r_s, w_h * L_d);
+    auto z_q = hypot(r_s, w_h * L_q);
+
+    // see equation 12 of L. Sun
+    auto salience = c.v_in * delta_L * w_h / (2 * z_d * z_q);
+
+    motor.set_duty({});
+    hal::delay(clk, settle_time);
+
+    // 3.4, L. Sun
+    if (t_p > t_n) {
+      return { rotor, salience };
+    } else {
+      return { rotor + 180.0f * deg, salience };
+    }
+  }
+
   /*
   HFI, despite its name, only injects pulses at low frequencies (~1kHz),
   but when the motor is moving at a slow rate (< 100 rotations per second)
   the bEMF is too small to meaningfully interfere with hfi.
 
   HFI pulses are injected on the d axis of dq0 to reduce torque disturbances.
-
   */
-  std::pair<volts, radians> loop(milliseconds dt, ab<A> current)
+
+  std::pair<volts, radians> loop(milliseconds dt, amps i_q)
   {
-    using namespace mp_units::si::unit_symbols;
-    using namespace mp_units;
-    auto i = park(current, rotor);
     time += dt;
+    update_controller(
+      dt, lp_filter(i_q * si::sin(time * injection_frequency) / k_s));
     rotor += dt * speed_err;
-    float dut = (time / injection_period).numerical_value_in(one);
-    if (dut < duty) {
-      // start of period
-      prev_i = i;
-      sampled = false;
-      begin_sample = time;
-      return { injection_mag, rotor };
-    } else if (dut < 0.5f) {
-      // end of positive pulse
-      if (!sampled && dut < duty + sample_delay) {
-        di = i - prev_i;
-        i_end = i;
-        delta_t = time - begin_sample;
-        sampled = true;
-      }
-    } else if (dut < 0.5f + duty) {
-      prev_i = i;
-      sampled = false;
-      begin_sample = time;
-      return { -injection_mag, rotor };
-    } else if (dut < 0.5f + duty + sample_delay) {
-      if (!sampled) {
-        dq0<A> neg_di = i - prev_i;
-        positive = abs(di.d) > abs(neg_di.d);
-        if (!positive) {
-          di = { neg_di.d, neg_di.q };
-          i_end = i;
-          delta_t = time - begin_sample;
-        }
-        sampled = true;
-      }
-    } else if (dut < 1.0f) {
-      // just polled after pulse is finished
-      if (!calculated) {
-        update_controller(dt, estimate_err(dt));
-        calculated = true;
-      }
-    } else {
-      time = 0 * s;
-      calculated = false;
-    }
-    return { 0 * V, rotor };
+    auto voltage = si::cos(time * injection_frequency) * injection_mag;
+    time = remainder(time, injection_period);
+    return { voltage, rotor };
   }
 
   void update(milliseconds dt, radians r)
@@ -155,42 +214,47 @@ struct hfi_observer
 
 private:
   constexpr static auto H = mp_units::si::henry;
-  static dq0<H> estimate_inductance(milliseconds dt, dq0<A> di)
-  {
-    using namespace mp_units::si::unit_symbols;
-    using namespace mp_units;
-    // i = V/R(1-exp(-Rt/L))
-    // di/dt = V/R * R/L exp(-Rt/L)
-    //       = V/L * exp(-Rt/L)
-    // L = V / di/dt
-    // when t ~ 0, exp(-Rt/L) ~ 1
-    // L ~ V / di/dt
-    auto di_dt = (di / dt);
-    quantity<H, float> d = injection_mag / abs(di_dt.d);
-    quantity<H, float> q = injection_mag / abs(di_dt.q);
-    return { d, q };
-  }
-
-  radians estimate_err(milliseconds dt)
-  {
-    auto L = estimate_inductance(dt, di);
-    auto delta_l = (L.d - L.q) / 2;
-    auto ld2 = mp::pow<2>(L.d);
-    auto lq2 = mp::pow<2>(L.q);
-
-    auto zmag2 = 2 * mp::sqrt(r4 + 2 * r2w2 * (ld2 + lq2) + w4 * ld2 * lq2);
-    ohms delta_Z = delta_l * injection_frequency;
-    amps i_hat = injection_mag * delta_Z / zmag2;
-    auto e = si::asin(i_end.q / i_hat);
-    if (!positive) {
-      e += 180.0f * si::degree;
-    }
-    return e;
-  }
 
   void update_controller(milliseconds dt, radians error)
   {
     speed_err = err_controller.loop(dt, lp_filter.loop(error));
+  }
+
+  static radians initial_angle(hal::steady_clock& clk,
+                               triple_hbridge& motor,
+                               triple_current_sensor shunts,
+                               motor_characteristics const& c)
+  {
+    using namespace mp_units;
+    using namespace mp_units::si::unit_symbols;
+    // This observer is probably suboptimally tuned, but that's ok
+    // because this should be done on a stationary rotor
+    hfi_observer hfi(c, 1.0f * A, 0.0f * rad, 10 * us);
+    auto start = clk.uptime();
+    auto last_time = start;
+    auto f = clk.frequency() * Hz;
+    // do this for at most 500 ms
+    auto end = hal::u64(0.5f * clk.frequency()) + start;
+    // todo change to a timer or something for timing consistency?
+    radians rotor = {};
+    using namespace std::chrono_literals;
+
+    do {
+      auto now = clk.uptime();
+      auto dt = (now - last_time) / f;
+      auto i = park(clarke(shunts.get_current()), rotor);
+      auto [v, theta] = hfi.loop(dt, i.q);
+      rotor = theta;
+      auto duty = inverse_clark_park(dq0<V>{ v, {} }, rotor) / c.v_in;
+      motor.set_duty(duty);
+      hal::delay(clk, 10us);
+    } while (last_time < end && hfi.get_speed_err() > 0.001f * rad / mS);
+    // at this point the rotor should have converged, or we've given up.
+    if (hfi.get_speed_err() >= 0.001f * rad / mS) {
+      throw std::runtime_error(
+        "Unable to determine initial rotor position using HFI");
+    }
+    return rotor;
   }
 
   constexpr static mp::quantity<si::radian / si::second, float>
@@ -208,19 +272,12 @@ private:
   constexpr static float duty = 0.01f;
   constexpr static float sample_delay = 0.001f;
 
-  radians rotor{};
-  dq0<A> prev_i{}, di{}, i_end{};
+  radians rotor;
+  saliency k_s;
   milliseconds time{};
-  milliseconds begin_sample;
-  milliseconds delta_t;
   mp::quantity<si::radian / mS, float> speed_err{};
-  mp::quantity<mp::pow<4>(si::ohm), float> r4{};
-  mp::quantity<mp::pow<2>(si::ohm) / mp::pow<2>(mS), float> r2w2{};
   lowpass<si::radian> lp_filter;
   zero_pi_controller<si::radian, si::radian / mS> err_controller;
-  bool positive = true;
-  bool sampled = false;
-  bool calculated = false;
 };
 
 }  // namespace foc
