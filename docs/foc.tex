@@ -1,0 +1,242 @@
+\documentclass[10pt, a4paper, twocolumn]{article}
+\input{structure.tex}
+\addbibresource{references.bib}
+\title{Implementing Sensorless Field Oriented Control: A Case Study}
+
+\author{
+	\authorstyle{Shin Umeda}
+}
+
+
+\date{\today} 
+
+\begin{document}
+
+\maketitle 
+
+\thispagestyle{firstpage} 
+
+\lettrineabstract{Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.}
+
+\section{Background}
+The principle goal of the SJSU Robotics club is to build robots. In order to improve supply-chain resiliance and reduce dependence on vendors, the SJSU Robotics Electrical Engineering Sub-team has created a motor controller (hereon "Perseus") that is agnostic to the motor itself.
+
+The primary issues faced when using servo motors were: \begin{enumerate}
+  \item Inability to debug firmware
+  \item Inability to reflash or update firmware
+  \item Lack of diagnostics
+  \item Difficulty with physical repair
+  \item Difficulty with support due to differing timezones
+  \item Difficulty with sourcing due to geopolitical shifts
+\end{enumerate}
+
+Many of these issues were not inherent to any motor or vendor in particular, and would not be improved by changing vendor. Motor firmware is usually highly proprietary, and thus most vendors do not provide a means to debug the firmware. Furthermore, the historically the team has sourced motors from China. Due to recent geopolitical shifts, this has become rather infeasible.
+
+Furthermore, our own BLDC driver board would provide many advantages. We would be able to write our own firmware, and be able to choose how we interface with it as we wish. We can also offload additional tasks onto the motor, such as detecting limit-switch activations. We can also freely choose whatever motor we wish, adapting the motor the the mechanical requirements.
+
+For these reasons, along with academic curiosity, we have chosen to create our own motor driver. Our motor driver uses modern algorithms to achieve fully sensorless Field Oriented Control, allowing for maximum mechanical flexibility.
+
+\subsection{Brushless DC Motors}
+
+\begin{figure}
+\includegraphics{motor.jpg}
+\caption{A Brushless DC Motor TODO make own graphic}
+\label{motor}
+\end{figure}
+
+Brushless DC Motors can be described as having two parts: a stationary stator
+and a rotating rotor. The stator possesses electromagnet coils which move the
+magnets stuck on the rotor. As seen in figure \ref{motor}, the stator coils have
+three phases: u, w, v. The coils are wired together in a wye configuration, meaning
+that the sum of the currents of the phases is zero (barring leakage or shorts).
+
+\begin{equation}
+\vec{\tau}=\vec{m}\times\vec{B}=\vert m\vert\vert B\vert sin(\theta)
+\label{motor_torque}
+\end{equation}
+
+Brushless DC Motors are different in comparison to Brushed DC motors, in that
+their commutation is done electronically.  As is well known, the torque of a motor is the cross product of the magnetic dipole moment and the magnetic field. (Eq. \ref{motor_torque}) This means to maximize torque, the magnetic field must be oriented $90^\circ$ to the rotor. Much of the difficulty in doing so is determing the rotor position and calculating the math for the necessary current in real time.
+
+\subsection{Clarke-Park Transform}
+
+The Clarke transform, otherwise known as the $\alpha\beta\gamma$ transform, converts three-phase current (referred to hereon out as the $uvw$ space) to $\alpha\beta\gamma$ space. $\alpha\beta\gamma$ space is significantly more convenient because it transforms three sine waves offset by $60^\circ$ to two sine waves offset by $90^\circ$ degrees.
+
+\begin{equation}
+\begin{bmatrix}
+  i_{\alpha} \\
+  i_{\beta} \\
+  i_{\gamma}
+\end{bmatrix}
+  =T\vec{i}_{uvw}=\sqrt{\frac{2}{3}}\begin{bmatrix}
+    1 & -\frac{1}{2} & -\frac{1}{2} \\
+    0 & \frac{\sqrt{3}}{2} & -\frac{\sqrt{3}}{2} \\
+    \frac{1}{\sqrt{2}} & \frac{1}{\sqrt{2}} & \frac{1}{\sqrt{2}}
+  \end{bmatrix}
+  \begin{bmatrix}
+    i_{u} \\
+    i_{v} \\
+    i_{w}
+  \end{bmatrix}
+  \label{clarke}
+\end{equation}
+
+As seen in Eq. \ref{clarke}, the first and second rows are made up of the
+three-phase vector's contributions to the x and y axis. The third row is
+the sum of all of the currents, and is zero unless the currents are unbalanced.
+
+\begin{equation}
+  T\begin{bmatrix}
+    i\sin(\theta) \\
+    i\sin(\theta + \frac{2}{3}\pi) \\
+    i\sin(\theta + \frac{4}{3}\pi)
+  \end{bmatrix}=\begin{bmatrix}
+     i\sin(\theta) \\
+     i\cos(\theta) \\
+     0
+  \end{bmatrix}
+\end{equation}
+
+Notably, in a balanced system the $\gamma$ term can be ignored since we assume current cannot leak out of the system. In order to use this for rotor control however, we need to maintain a flux $90^\circ$ from the rotor. In other words, the current vector must be perpendicular to the rotor. In order to seperate the perpendicular and the on-axis components, we rotate the coordinate system by the angle of the rotor. This is the Park trasform. (Eq. \ref{park})
+
+\begin{equation}
+  i_{dq0}=
+  \begin{bmatrix}
+    \cos(\theta) & -\sin(\theta) \\
+    \sin(\theta) & \cos(\theta)
+  \end{bmatrix}
+  \begin{bmatrix}
+    i_{\alpha} \\
+    i_{\beta}
+  \end{bmatrix}
+  \label{park}
+\end{equation}
+
+The Park transform transforms a $\alpha\beta$ vector into a $dq0$ vector. A $dq0$ vector has two components: the direct component, and the quadrature component. The direct component is current in-axis with the rotor, while the quadrature component is perpendicular to the rotor and actually provides torque. To maximize efficiency then, we must minimize the direct component while controlling the quadrature component for torque.
+
+\subsection{Field Oriented Control}
+
+The field oriented control algorithm is as such: we first determine our rotor angle through some means. We then measure the current of the phases of the motor. We transform the current using the Clarke-Park transform to find a direct and quadrature current. We use a PID controller to minimize direct current, and to set quadrature current to some desired torque value. The resulting output values are then inverse Clarke-Park transformed into sine values, which are then fed into an H-bridge to control the motor. (Fig. \ref{FOC-control})
+
+\begin{figure}
+  \includegraphics{dia.jpg}
+  \caption{FOC diagram TODO replace with tikz diagram}
+  \label{FOC-control}
+\end{figure}
+
+\subsubsection{Space Vector Modulation}
+
+Notably however, the inverse Clarke-Park transform is not the best way to control the motor. The maximum magnitude output by such a transform is $\sin(60^\circ)$ of the input voltage, which is about 86\% of the input voltage. This discrepancy comes from the fact that at no point are all of the switchs' PWM at 100\%. i.e. when at $\theta=0$, phase u would be at 100\%, but phases w and v would be at -86\%. Space Vector Control gets around this by not outputing sine waves, but instead breaking down the space into 6 vectors and switching between vectors. Depending on angle, it chooses two vectors as the components and switches between the two. This makes it possible to PWM one vector at 100\%, maintaining 100\% duty cycle and making full use of our voltage range. TODO insert graphic.
+
+\subsection{Sensorless Rotor Measurement}
+
+Notably, Field Oriented Control requires constant measurement of the rotor position. This requires either a quadrature encoder, which introduces a mechanical point of failure and additional mounting hardware, or a magnetic encoder, which is typically bottlenecked by the communication protocol and/or has too slow of a sample rate to be useful.While not insurmountable, these issues require additional care concerning the motor used. In order to be truly motor-agnostic, it is then necessary to consider sensorless motor sensing.
+
+The architecture we have chosen to use combines a sensorless flux linkage algorithm with a high frequency injection algorithm to provide position detection for low and high speeds. The flux linkage algorithm uses motor characteristic knowledge to derive back EMF from current, which is then used to estimate rotor position. When rotor speeds are too slow to provide significant back EMF, high frequency injection is used.
+
+\subsubsection{Flux Linkage Observer}
+
+The Flux Linkage observer is the MXLEMMINGS observer from the \cite{MESC_MAN}, with a few additions from \cite{simplefoc2022}. As is well known, the voltage of a motor
+is proportional to the change of magnetic flux over time. In other words, the
+magnetic flux of a motor is the integral of the voltage of the motor over time. (Eq. \ref{fluxemf})
+
+\begin{equation}
+  \vec{\psi}=\int \vec{V}_{\text{BEMF}} dt + \vec{C}
+  \label{fluxemf}
+\end{equation}
+
+Fortunately, we can determine motor back EMF voltage from current alone using knowledge of the motor characteristics. (TODO insert circuittikz motor model). As is well known, a motor can be electrically modeled as three components: the resistivity of the coils, the inherent inductance of the coils, and a voltage source from the back EMF. It then follows, that the voltage of a motor can be described like in equation \ref{motoreq}.
+
+\begin{equation}
+  V_m=Ri+L\frac{di}{dt}-V_{\text{BEMF}}
+  \label{motoreq}
+\end{equation}
+
+Since we already know the voltage of the motor (as we are applying said voltage), we need only measure current and change in current to determine back EMF. The flux linkage observer does as such and retrieves the angle of the resulting flux vector to determine rotor angle.
+
+The flux linkage observer however, comes with two major infirmities: an inability to determine initial rotor position, and a dependence on back EMF. When back EMF is very small, such as when the rotor speed is slow, the flux linkage observer fails to determine back EMF from noise. Furthermore, the flux linkage observer can only integrate a change in angle, and is unable to determine initial angle. To suppliment these weaknesses, high frequency injection is used in conjunction with flux linkage observance.
+
+\subsubsection{High Frequency Injection}
+
+The firmware describes high frequency injection as described by \cite{SUN20226457}. High frequency injection depends on a critical characteristic of the rotor referred to as saliency. Saliency can be described by how the rotor inductance changes depending on angle. By injecting high frequency pulses of current, and measuring the resulting impedance, we can deduce the inductance of the rotor at that angle. Then we use saliency to determine angle from the inductance.
+
+First, we begin by transforming everything into the $dq0$ coordinate system. High frequency injection detects the error between estimated angle and the real angle, and to do so we need to rotate everything by the estimated angle so we can find error. Once we have our rotating reference frame, we first inject voltage into the system.
+\begin{equation}
+  \begin{bmatrix}
+    v_{d} \\
+    v_{q}
+  \end{bmatrix}=
+  \begin{bmatrix}
+    Z_d & 0 \\
+    0 & Z_q
+  \end{bmatrix}
+  \begin{bmatrix}
+    i_d \\
+    i_q
+  \end{bmatrix}
+  \label{dq_impedance}
+\end{equation}
+
+That said, we do not have the real rotor position, so we cannot find $\hat{i}$ or $\hat{v}$ in $dq0$ space. By rotating the estimated vectors, we can get the real vectors.
+
+\begin{equation}
+  \hat{v} =
+  \begin{bmatrix}
+    \cos(\Delta\theta) & -\sin(\Delta\theta) \\
+    \sin(\Delta\theta) & \cos(\Delta\theta)
+  \end{bmatrix}v
+  \label{rot_v}
+\end{equation}
+\begin{equation}
+  \hat{i} =
+  \begin{bmatrix}
+    \cos(\Delta\theta) & -\sin(\Delta\theta) \\
+    \sin(\Delta\theta) & \cos(\Delta\theta)
+  \end{bmatrix}i
+  \label{rot_i}
+\end{equation}
+
+By substituting equations \ref{rot_v} and \ref{rot_i} and inverting the impedance matrix, it follows that we end up with equation \ref{dq_err}, where $Z=(Z_d + Z_q) / 2$ and $\Delta Z=(Z_d - Z_q) / 2$.
+
+\begin{equation}
+  \begin{bmatrix}
+    \hat{i}_{d} \\
+    \hat{i}_{q}
+  \end{bmatrix}=
+  \frac{1}{Z_d Z_q}
+  \begin{bmatrix}
+    Z - \Delta Z\cos(2\Delta\theta) & -\Delta Z\sin(2\Delta\theta) \\
+    -\Delta Z\sin(2\Delta\theta) & Z + \Delta Z\cos(2\Delta\theta)
+  \end{bmatrix}
+  \begin{bmatrix}
+    \hat{v}_d \\
+    \hat{v}_q
+  \end{bmatrix}
+  \label{dq_err}
+\end{equation}
+
+To minimize disturbing the torque of the motor, we always inject volage into the d axis and never inject any into the q axis. As such we can set $\hat{v}_q$ to 0. Furthermore, we are trying to minimize error, so we choose to measure only $\hat{i}_q$ since it becomes zero when $\Delta\theta=0$ and $\hat{v}_q=0$. We inject $\hat{v}_q=V_h\cos(\omega_h t)$, where $\omega_h$ is the frequency of the high frequency injection and $V_h$ is the magnitude. From this, we find $\hat{i}_q$ in terms of $\Delta\theta$ and $\hat{v}_q$ in equation \ref{iq_wave}.
+
+\begin{equation}
+  \hat{i}_q
+ = \frac{-\Delta Z V_h\cos(\omega_h t)}{Z_d Z_q}\sin(2\Delta\theta) 
+ \label{iq_wave}
+\end{equation}
+
+Notably however, this is a sine wave, and therefore useless as an error signal. We need to modulate $\hat{i}_q$ by $\sin(\omega_h)$, which results in  equation \ref{}.
+
+\begin{equation}
+\hat{i}_q \times \sin(\omega_h t)
+ = \frac{-\Delta Z V_h\cos(\omega_h t)}{2 Z_d Z_q}\sin(2\Delta\theta)
+ \label{hfi_final}
+\end{equation}
+
+\section{Hardware}
+
+Perseus is a motor control board containing stuff.
+
+\printbibliography[title={Bibliography}] 
+
+
+
+\end{document}
