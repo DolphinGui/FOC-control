@@ -1,6 +1,7 @@
 #pragma once
 
 #include "utility.hpp"
+#include <array>
 
 namespace foc {
 
@@ -127,6 +128,43 @@ struct lowpass
 private:
   mp_units::quantity<R, float> prev;
   mp_units::quantity<mp_units::one, float> a;
+};
+
+struct biquad_coef
+{
+  std::array<float, 3> b;
+  std::array<float, 2> a;
+};
+
+template<auto R, biquad_coef coef>
+struct biquad_filt
+{
+  constexpr biquad_filt() = default;
+
+  mp_units::quantity<R, float> loop(mp_units::quantity<R, float> x)
+  {
+    mp_units::quantity<R, float> y = x * coef.b[0];
+    for (size_t i = 0; i < 2; ++i) {
+      y += xs[i] * coef.b[i + 1] + ys[i] * coef.a[i];
+    }
+    for (int i = 1; i >= 0; --i) {
+      xs[i] = xs[i - 1];
+      ys[i] = ys[i - 1];
+    }
+    xs[0] = x;
+    ys[0] = y;
+
+    return y;
+  }
+
+  mp_units::quantity<R, float> operator()(mp_units::quantity<R, float> x)
+  {
+    return loop(x);
+  }
+
+private:
+  std::array<mp_units::quantity<R, float>, 2> xs;
+  std::array<mp_units::quantity<R, float>, 2> ys;
 };
 
 [[maybe_unused]]
