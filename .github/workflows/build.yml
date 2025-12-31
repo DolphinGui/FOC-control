@@ -3,11 +3,6 @@ name: ✅ Build
 on:
   workflow_dispatch:
   pull_request:
-  push:
-    branches:
-      - main
-  schedule:
-    - cron: "0 12 * * 0"
 
 jobs:
   build-mod-lpc40-v5:
