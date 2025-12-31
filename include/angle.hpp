@@ -82,14 +82,9 @@ struct hfi_observer
   by the PI controller, so just use a best effort guess of what saliency
   should be and tune from there.
   */
-  hfi_observer(motor_characteristics const& m,
-               saliency k_s,
-               radians rotor,
-               milliseconds average_dt)
+  hfi_observer(radians rotor, saliency k_s)
     : rotor(rotor)
     , k_s(k_s)
-    , lp_filter(injection_period, average_dt)
-    // this is a dumb heruistic that hopefully won't blow up
     , err_controller(1.0f / mS, 0.1f / mS / si::second)
   {
   }
@@ -192,8 +187,10 @@ struct hfi_observer
   std::pair<volts, radians> loop(milliseconds dt, amps i_q)
   {
     time += dt;
-    update_controller(
-      dt, lp_filter(i_q * si::sin(time * injection_frequency) / k_s));
+    auto err = heterodyne_filt(superheterodyner(i_q) * 2 *
+                               si::sin(time * injection_frequency)) /
+               k_s;
+    update_controller(dt, err);
     rotor += dt * speed_err;
     auto voltage = si::cos(time * injection_frequency) * injection_mag;
     time = remainder(time, injection_period);
@@ -222,7 +219,7 @@ private:
 
   void update_controller(milliseconds dt, radians error)
   {
-    speed_err = err_controller.loop(dt, lp_filter.loop(error));
+    speed_err = err_controller.loop(dt, error);
   }
 
   static radians initial_angle(hal::steady_clock& clk,
@@ -234,7 +231,7 @@ private:
     using namespace mp_units::si::unit_symbols;
     // This observer is probably suboptimally tuned, but that's ok
     // because this should be done on a stationary rotor
-    hfi_observer hfi(c, 1.0f * A, 0.0f * rad, 10 * us);
+    hfi_observer hfi(0.0f * rad, 1.0f * A);
     auto start = clk.uptime();
     auto last_time = start;
     auto f = clk.frequency() * Hz;
@@ -276,12 +273,21 @@ private:
 
   constexpr static float duty = 0.01f;
   constexpr static float sample_delay = 0.001f;
+  // call filt_gen with 10kHz sample frequency, corner frequencies of 950 Hz and
+  // 1050 Hz
+  constexpr static biquad_coef bp_coef = { { 0.03046875, 0., -0.03046875 },
+                                           { -1.56950898, 0.93906251 } };
+  constexpr static biquad_coef bs_coef = {
+    { 0.96953125, -1.56950898, 0.96953125 },
+    { -1.56950898, 0.93906251 }
+  };
 
   radians rotor;
   saliency k_s;
   milliseconds time{};
   mp::quantity<si::radian / mS, float> speed_err{};
-  lowpass<si::radian> lp_filter;
+  biquad_filt<si::ampere, bp_coef> superheterodyner;
+  biquad_filt<si::ampere, bs_coef> heterodyne_filt;
   zero_pi_controller<si::radian, si::radian / mS> err_controller;
 };
 

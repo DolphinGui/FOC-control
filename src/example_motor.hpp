@@ -101,7 +101,7 @@ struct sensorless_motor
     foc::triple_current_sensor shunts;
     auto [r, s] =
       foc::hfi_observer::initialization(clk, hbridge, shunts, characteristics);
-    foc::hfi_observer hfi(characteristics, s, r, 100 * us);
+    foc::hfi_observer hfi(r, s);
 
     return sensorless_motor(std::move(hbridge), std::move(shunts), {}, r, s);
   }
@@ -117,7 +117,7 @@ private:
     , output_encoder(std::move(e))
     , torque_controller(characteristics, 2730 * rpm, 0.1125f, &hbridge)
     , observer(characteristics)
-    , hfi(characteristics, saliency, rotor, 100 * us)
+    , hfi(rotor, saliency)
     , theta_pid(1.0f / ms, 0.1f / ms / s)
     , w_pid(1.0f * A * ms, 0.1f * A * ms / s)
     , mode(control_mode::pos)
