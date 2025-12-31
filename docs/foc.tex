@@ -36,11 +36,28 @@ Furthermore, our own BLDC driver board would provide many advantages. We would b
 
 For these reasons, along with academic curiosity, we have chosen to create our own motor driver. Our motor driver uses modern algorithms to achieve fully sensorless Field Oriented Control, allowing for maximum mechanical flexibility.
 
+\section{Theory of Operation}
+BLDC theory
 \subsection{Brushless DC Motors}
 
 \begin{figure}
-\includegraphics{motor.jpg}
-\caption{A Brushless DC Motor TODO make own graphic}
+\begin{tikzpicture}
+\draw[->](0, 0) -- (0:2.5) node[right]{$\alpha$};
+\draw[->](0, 0) -- (90:2.5) node[above]{$\beta$};
+\draw[->](0, 0) -- (32:2.5) node[above right]{$d$};
+\draw[->](0, 0) -- (122:2.5) node[above left]{$q$};
+\draw (0,0) circle [radius=2];
+\draw (0,0) circle [radius=1.5];
+\draw[fill=white] (0:1.75) circle [radius=0.25] node{U};
+\draw[fill=white] (120:1.75) circle [radius=0.25] node{V};
+\draw[fill=white] (240:1.75) circle [radius=0.25] node{W};
+\filldraw[fill=blue!20,rotate=32] (-1, -0.25) rectangle (0, 0.25);
+\filldraw[fill=red!20,rotate=32] (0, -0.25) rectangle (1, 0.25);
+\node[rotate=122] (N) at (32:0.75){N};
+\node[rotate=122] (S) at (32:-0.75){S};
+\draw[->](1.2,0) arc (0:32:1.2) node[midway, right] {$\theta$};
+\end{tikzpicture}
+\caption{A simplified single pole-pair three-slot BLDC motor with coordinate systems labeled.}
 \label{motor}
 \end{figure}
 
@@ -118,9 +135,63 @@ The Park transform transforms a $\alpha\beta$ vector into a $dq0$ vector. A $dq0
 
 The field oriented control algorithm is as such: we first determine our rotor angle through some means. We then measure the current of the phases of the motor. We transform the current using the Clarke-Park transform to find a direct and quadrature current. We use a PID controller to minimize direct current, and to set quadrature current to some desired torque value. The resulting output values are then inverse Clarke-Park transformed into sine values, which are then fed into an H-bridge to control the motor. (Fig. \ref{FOC-control})
 
+\newcommand{\mixer}[2]{
+    \draw circle[radius=#1, #2] (45:-#1) -- (45:#1) (135:-#1) -- (135:#1)
+}
+
 \begin{figure}
-  \includegraphics{dia.jpg}
-  \caption{FOC diagram TODO replace with tikz diagram}
+  \begin{tikzpicture}[node distance=5mm,
+                    rect/.style={draw, rectangle,minimum size=8.5mm, inner xsep=0mm, align=center, node distance = 1},
+                    circ/.style={draw, circle,minimum size=2mm, align=center, node distance = 2},
+                    arrow/.style={draw, -latex,node distance=2cm},
+                    sum/.style={draw, circle, node distance = 1},
+                    coord/.style={minimum size = 0,inner sep=0},
+                    tap/.style={minimum size = 1, inner sep = 1, draw, circle, fill=black},]
+  \matrix[row sep=10,column sep=10]{
+  \node(torque){$\tau$}; &
+  \node(sum_q)[sum]{}; &&
+  \node(q_pid)[rect]{PI} node at (q_pid.east)(q_pid_e)[coord, inner ysep=4]{}; &
+  \node(p00)[coord, inner ysep = 4]{}; &
+  \node(inv_dq)[rect]{$dq^{-1}$} node at (inv_dq.west)(inv_dq_w)[coord, inner ysep=4]{}; &
+  \node(svm)[rect]{SVM}; &
+  \node(motor)[circ]{Motor}; \\
+  \node(dref){0}; &&
+  \node(sum_d)[sum]{}; &
+  \node(d_pid)[rect]{PI}; &
+  \node(p10)[coord]{}; &
+  \node(p11)[coord]{}; &
+  \node(p12)[coord]{}; \\
+  &\node(p0)[coord, inner ysep = 6]{};
+  &\node(p1)[coord, inner ysep = 6]{};
+  & \node(dq)[rect]{$dq0$} node at (dq.west) (dq_w)[coord, inner ysep = 6]{} node at (dq.east) (dq_e)[coord, inner ysep=6]{};
+  &&\node(ab)[rect]{$\alpha\beta$} node at (ab.west)(ab_w)[coord, inner ysep=6]{} node at (ab.east)(ab_e)[coord, inner ysep=6]{}; &&
+  \node(taps)[coord, inner ysep=6, inner xsep=12]{} node at (taps.north west)(ta)[tap]{} node at (taps)(tb)[tap]{} node at (taps.south east)(tc)[tap]{}; \\
+  \node(ang){$\theta$}; &&&
+  \node(p33)[tap]{}; &&&
+  \node(p35)[tap]{}; &
+  \node(obv)[rect]{Angle\\Observer} node at (obv.north)(obv_n)[coord, inner xsep=12]{}; \\
+  };
+  \draw[arrow] (obv) -> (ang);
+  \draw[arrow] (motor.south west)  -- (ta) -- (obv_n.west);
+  \draw[arrow] (motor) -- (tb) -- (obv);
+  \draw[arrow] (motor.south east) -- (tc) -- (obv_n.east);
+  \draw[arrow] (torque) -> (sum_q) -> (q_pid);
+  \draw[arrow] (q_pid_e.north) -> (inv_dq_w.north) node[above, midway]{$d$};
+  \draw[arrow] (d_pid.east) -- (p10) node[below, midway]{$q$} -- (p00.south) --(inv_dq_w.south);
+  \draw[arrow] (inv_dq)->(svm);
+  \draw[arrow] (svm)->(motor);
+  \draw[arrow] (ta) -- (ab_e.north);
+  \draw[arrow] (tb) -- (ab_e);
+  \draw[arrow] (tc) -- (ab_e.south);
+  \draw[arrow] (dq_w.north) -- (p1.north) node[above, pos=0.5]{$d$} -- (sum_d);
+  \draw[arrow] (dq_w.south) -- (p0.south) node[below, pos=0.2]{$q$} -- (sum_q);
+  \draw[arrow] (ab_w.north) -- (dq_e.north) node[above, midway]{$\alpha$};
+  \draw[arrow] (ab_w.south) -- (dq_e.south) node[below, midway]{$\beta$};
+  \draw[arrow] (dref) -- (sum_d) -- (d_pid);
+  \draw[arrow] (p33) -- (dq.south);
+  \draw[arrow] (p35) -- (p12) -- (p11) -- (inv_dq.south);
+  \end{tikzpicture}
+  \caption{FOC Control Loop}
   \label{FOC-control}
 \end{figure}
 
@@ -199,19 +270,13 @@ That said, we do not have the real rotor position, so we cannot find $\hat{i}$ o
 By substituting equations \ref{rot_v} and \ref{rot_i} and inverting the impedance matrix, it follows that we end up with equation \ref{dq_err}, where $Z=(Z_d + Z_q) / 2$ and $\Delta Z=(Z_d - Z_q) / 2$.
 
 \begin{equation}
-  \begin{bmatrix}
-    \hat{i}_{d} \\
-    \hat{i}_{q}
-  \end{bmatrix}=
+ \hat{i}=
   \frac{1}{Z_d Z_q}
   \begin{bmatrix}
     Z - \Delta Z\cos(2\Delta\theta) & -\Delta Z\sin(2\Delta\theta) \\
     -\Delta Z\sin(2\Delta\theta) & Z + \Delta Z\cos(2\Delta\theta)
   \end{bmatrix}
-  \begin{bmatrix}
-    \hat{v}_d \\
-    \hat{v}_q
-  \end{bmatrix}
+  \hat{v} 
   \label{dq_err}
 \end{equation}
 
@@ -223,17 +288,21 @@ To minimize disturbing the torque of the motor, we always inject volage into the
  \label{iq_wave}
 \end{equation}
 
-Notably however, this is a sine wave, and therefore useless as an error signal. We need to modulate $\hat{i}_q$ by $\sin(\omega_h)$, which results in  equation \ref{}.
+Notably however, this is a sine wave, and therefore useless as an error signal. In order to extract the signal ($\sin(2\Delta\theta$), we need to extract it from the sine wave. We demodulate the signal via superheterodyning as demonstrated in \cite{dmytrohfi}, shown in figure (TODO insert tikz plot of heterodyning). This error signal is input into a phase locked loop consisting of a PI controller and an integrator. (TODO insert another tikz plot) This phase locked loop will converge on the correct angle.
 
-\begin{equation}
-\hat{i}_q \times \sin(\omega_h t)
- = \frac{-\Delta Z V_h\cos(\omega_h t)}{2 Z_d Z_q}\sin(2\Delta\theta)
- \label{hfi_final}
-\end{equation}
+TODO need to check if initial rotor position detection is necessary as described in \cite{SUN20226457}. \cite{dmytrohfi} makes no reference of it, and seemingly implies that it will always convege on the true angle. Given \cite{SUN20226457} uses a simplified saliency model which leaves an ambiguity whereas \cite{dmytrohfi} does not, it would imply for motors with more than one pole pair it should be fine. Further testing required.
 
-\section{Hardware}
+\section{Implementation}
 
-Perseus is a motor control board containing stuff.
+Perseus is a small motor control board consisting of a DRV8300 three-phase H-bridge, hall effect current sensors, integrated CAN bus, and a micromod microcontroller slot. The DRV8300 H-bridge driver was chosen due to its simplicity, which allows for flexibility. For example, earlier prototypes of Perseus was used as a brushed motor driver, which would have been impossible if the H-bridge driver handled commutation. The usage of a simplistic H-bridge driver also allows us to implement commutation in software.
+
+The usage of a micromod slot is due to the SJSU robotics club's ecosystem, and allows for swapping the microcontroller on the fly. This means an in-circuit programmer is not necessary, and microcontrollers can be swapped out for performance or repair. The CAN bus is the standard interface used on our robots, and uses the SN65 3.3V CAN transciever. CANbus is expected to be implemented in hardware on the microcontroller, or in software.
+
+\section{Firmware}
+
+The FOC library is a low level toolkit for controlling BLDC motors. It provides both open loop and closed loop FOC control as well as multiple angle observers. It utilizes hardware PWM timers instead of software PWM to reduce the computation demands of FOC. A typical use case consists of a fast FOC loop, a slower position/velocity PID loop, and a slower event handling loop.
+
+The FOC loop needs to be the fastest since it must respond to the rotation of the rotor, which can easily exceed hundreds of radians per second. Current measurements and angle estimation is fed into the FOC control algorithm, which adjusts PWM duty cycles using either SVM or sine wave output. The mechanical control loop is significantly slower, as position/velocity is expected to be slower than the rotor due to gear ratios. Then an event loop handles high level control signals, such as setpoint changes or PID tuning.
 
 \printbibliography[title={Bibliography}] 
 
