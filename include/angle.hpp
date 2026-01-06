@@ -7,6 +7,7 @@
 #include <tuple>
 
 #include "filters.hpp"
+#include "peripherals.hpp"
 #include "utility.hpp"
 #include "vectors.hpp"
 #include <libhal/steady_clock.hpp>
@@ -46,9 +47,7 @@ struct flux_linkage_observer
   radians estimate_angle(milliseconds dt, triple_hbridge const& motor, ab<A> i)
   {
     using namespace mp_units::si::unit_symbols;
-    ab<V> v_m = clarke({ v_in * motor.u.get_duty_tristate(),
-                         v_in * motor.v.get_duty_tristate(),
-                         v_in * motor.h.get_duty_tristate() });
+    ab<V> v_m = clarke(v_in * motor.get_duty());
     volts emf_a = v_m.a - r_m * i.a - l_m * (i.a - prev_a) / dt;
     volts emf_b = v_m.b - r_m * i.b - l_m * (i.b - prev_b) / dt;
     phi_a = saturate(phi_a + emf_a * dt, flux_linkage);
@@ -92,7 +91,7 @@ struct hfi_observer
   static std::pair<radians, saliency> initialization(
     hal::steady_clock& clk,
     triple_hbridge& motor,
-    triple_current_sensor shunts,
+    triple_current_sensor& shunts,
     motor_characteristics const& c)
   {
     using namespace mp_units;
@@ -130,7 +129,7 @@ struct hfi_observer
     hal::delay(clk, settle_time);
     auto t_p = measure_settle();
 
-    motor.set_duty({});
+    motor.set_duty(uvh<mp_units::one>{});
     hal::delay(clk, settle_time);
 
     // sample negative inducatance
@@ -138,7 +137,7 @@ struct hfi_observer
     hal::delay(clk, settle_time);
     auto t_n = measure_settle();
 
-    motor.set_duty({});
+    motor.set_duty(uvh<mp_units::one>{});
     hal::delay(clk, settle_time);
 
     // sample inductance of d-axis
@@ -147,7 +146,7 @@ struct hfi_observer
     auto i_d = park(clarke(shunts.get_current()), rotor).d;
     auto L_d = c.v_in / (i_d / dt);
 
-    motor.set_duty({});
+    motor.set_duty(uvh<mp_units::one>{});
     hal::delay(clk, settle_time);
 
     // sample inductance of q-axis
@@ -165,7 +164,7 @@ struct hfi_observer
     // see equation 12 of L. Sun
     auto salience = c.v_in * delta_L * w_h / (2 * z_d * z_q);
 
-    motor.set_duty({});
+    motor.set_duty(uvh<mp_units::one>{});
     hal::delay(clk, settle_time);
 
     // 3.4, L. Sun
@@ -224,7 +223,7 @@ private:
 
   static radians initial_angle(hal::steady_clock& clk,
                                triple_hbridge& motor,
-                               triple_current_sensor shunts,
+                               triple_current_sensor const& shunts,
                                motor_characteristics const& c)
   {
     using namespace mp_units;

@@ -21,14 +21,11 @@ to minimize wasted torque.
 */
 namespace foc {
 
-struct uvh_duty
-{
-  uint16_t u, v, h;
-};
-
 // See table 2 of https://ww1.microchip.com/downloads/en/appnotes/00955a.pdf
 // todo stare at assembly and maybe save 1 trig operation
-inline uvh_duty space_vector(dq0<A> i, radians theta, amps max_current)
+inline uvh<mp_units::one, uint16_t> space_vector(dq0<A> i,
+                                                 radians theta,
+                                                 amps max_current)
 {
   using namespace mp_units::si::unit_symbols;
   using namespace mp_units;
@@ -54,29 +51,29 @@ inline uvh_duty space_vector(dq0<A> i, radians theta, amps max_current)
 
   switch (sector.numerical_value_in(one)) {
     case 0:
-      return uvh_duty{ t02,
-                       static_cast<uint16_t>(t02 + ta),
-                       static_cast<uint16_t>(ts - t02) };
+      return uvh<one, uint16_t>{ t02,
+                                 static_cast<uint16_t>(t02 + ta),
+                                 static_cast<uint16_t>(ts - t02) };
     case 1:
-      return uvh_duty{ static_cast<uint16_t>(t02 + tb),
-                       t02,
-                       static_cast<uint16_t>(ts - t02) };
+      return uvh<one, uint16_t>{ static_cast<uint16_t>(t02 + tb),
+                                 t02,
+                                 static_cast<uint16_t>(ts - t02) };
     case 2:
-      return uvh_duty{ static_cast<uint16_t>(ts - t02),
-                       t02,
-                       static_cast<uint16_t>(t02 + ta) };
+      return uvh<one, uint16_t>{ static_cast<uint16_t>(ts - t02),
+                                 t02,
+                                 static_cast<uint16_t>(t02 + ta) };
     case 3:
-      return uvh_duty{ static_cast<uint16_t>(ts - t02),
-                       static_cast<uint16_t>(t02 + tb),
-                       t02 };
+      return uvh<one, uint16_t>{ static_cast<uint16_t>(ts - t02),
+                                 static_cast<uint16_t>(t02 + tb),
+                                 t02 };
     case 4:
-      return uvh_duty{ static_cast<uint16_t>(t02 + ta),
-                       static_cast<uint16_t>(ts - t02),
-                       t02 };
+      return uvh<one, uint16_t>{ static_cast<uint16_t>(t02 + ta),
+                                 static_cast<uint16_t>(ts - t02),
+                                 t02 };
     case 5:
-      return uvh_duty{ t02,
-                       static_cast<uint16_t>(ts - t02),
-                       static_cast<uint16_t>(t02 + tb) };
+      return uvh<one, uint16_t>{ t02,
+                                 static_cast<uint16_t>(ts - t02),
+                                 static_cast<uint16_t>(t02 + tb) };
     default:
       std::terminate();
   }
