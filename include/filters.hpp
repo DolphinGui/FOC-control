@@ -1,6 +1,7 @@
 #pragma once
 
 #include "utility.hpp"
+#include "metaprogramming.hpp"
 #include <array>
 
 namespace foc {

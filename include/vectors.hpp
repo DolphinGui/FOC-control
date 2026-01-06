@@ -6,10 +6,10 @@
 
 namespace foc {
 
-template<auto U>
+template<auto U, typename Repr>
 struct uvh
 {
-  mp_units::quantity<U, float> u, v, h;
+  mp_units::quantity<U, Repr> u, v, h;
 };
 
 template<auto R1, auto R2>
@@ -150,18 +150,6 @@ inline uvh<R> inverse_clarke(ab<R> i) noexcept
   return { sqrtf(2.0f / 3.0f) * i.a,
            -1.0f / sqrtf(6.0f) * i.a + 1.0f / sqrtf(2.0f) * i.b,
            -1.0f / sqrtf(6.0f) * i.a - 1.0f / sqrtf(2.0f) * i.b };
-}
-
-inline void triple_hbridge::set_duty(uvh<mp_units::one> duty)
-{
-  u.set_duty(duty.u.numerical_value_in(mp_units::one));
-  v.set_duty(duty.v.numerical_value_in(mp_units::one));
-  h.set_duty(duty.h.numerical_value_in(mp_units::one));
-}
-
-inline uvh<mp_units::si::ampere> triple_current_sensor::get_current()
-{
-  return { u.get_current(), v.get_current(), w.get_current() };
 }
 
 }  // namespace foc

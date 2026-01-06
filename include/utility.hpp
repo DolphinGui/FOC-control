@@ -9,8 +9,6 @@
 
 #include <mp-units/math.h>
 
-#include "metaprogramming.hpp"
-
 namespace foc {
 // mp_units does not have an si-compatible revolution, so here it is
 inline constexpr struct revolution final
@@ -71,11 +69,6 @@ template<auto R1, typename Rep1, auto R2, typename Rep2, auto R3, typename Rep3>
                              ref };
 }
 
-struct current_sensor
-{
-  amps get_current();
-};
-
 struct motor_characteristics
 {
   volts v_in;
@@ -85,39 +78,7 @@ struct motor_characteristics
   unsigned pole_pairs;
 };
 
-template<auto U>
+template<auto U, typename Repr = float>
 struct uvh;
-
-struct hbridge
-{
-  // positive values PWM the high side,
-  // negative values PWM the low side, 0
-  // does nothing.
-  void set_duty_tristate(float);
-
-  // does PWM where it is high until
-  // it reaches a threshold value, where
-  // it goes low. Incapable of
-  void set_duty(uint16_t);
-
-  float get_duty_tristate() const;
-};
-
-struct triple_hbridge
-{
-  hbridge u, v, h;
-  void set_duty(uvh<mp_units::one>);
-};
-
-struct triple_current_sensor
-{
-  current_sensor u, v, w;
-  uvh<mp_units::si::ampere> get_current();
-};
-
-struct encoder
-{
-  radians get_angle();
-};
 
 }  // namespace foc

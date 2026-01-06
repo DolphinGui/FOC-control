@@ -7,8 +7,10 @@
 
 #include "filters.hpp"
 #include "metaprogramming.hpp"
+#include "peripherals.hpp"
 #include "utility.hpp"
 #include "vectors.hpp"
+
 /*
 General FOC rundown:
 
@@ -24,8 +26,6 @@ struct uvh_duty
   uint16_t u, v, h;
 };
 
-using uvh_v = uvh<V>;
-using dq0_v = dq0<V>;
 // See table 2 of https://ww1.microchip.com/downloads/en/appnotes/00955a.pdf
 // todo stare at assembly and maybe save 1 trig operation
 inline uvh_duty space_vector(dq0<A> i, radians theta, amps max_current)
@@ -89,11 +89,9 @@ struct closed_loop_controller
   // for gain calculations
   closed_loop_controller(motor_characteristics m,
                          rpm max_speed,
-                         float max_duty,
                          triple_hbridge* bridge)
     : motor(bridge)
     , v_in(m.v_in)
-    , max_duty(max_duty)
   {
     using namespace mp_units;
     using namespace mp_units::si::unit_symbols;
@@ -104,15 +102,9 @@ struct closed_loop_controller
     q_pid = pi_controller<A, V>(p, i, {}, 10.f * A * s);
   }
 
-  void set_phases(uvh_v i)
+  void set_phases(uvh<V> vm)
   {
-    using namespace mp_units;
-    auto normalize = [this](auto v) -> float {
-      return (v / v_in).numerical_value_in(one);
-    };
-    motor->u.set_duty_tristate(saturate(normalize(i.u), max_duty));
-    motor->v.set_duty_tristate(saturate(normalize(i.v), max_duty));
-    motor->h.set_duty_tristate(saturate(normalize(i.h), max_duty));
+    motor->set_duty(vm / v_in);
   }
 
   void loop(milliseconds dt,
@@ -120,7 +112,7 @@ struct closed_loop_controller
             dq0<A> dq_current,
             volts d_inject = {})
   {
-    dq0_v output;
+    dq0<V> output;
     output.d = d_pid.loop(dt, dq_current.d) + d_inject;
     output.q = q_pid.loop(dt, dq_current.q);
 
@@ -140,35 +132,25 @@ private:
   pi_controller<mp_units::si::ampere, mp_units::si::volt> q_pid;
 
   volts v_in;
-  float max_duty;
 };
 
 struct open_loop_controller
 {
-  open_loop_controller(motor_characteristics m,
-                       float max_duty,
-                       triple_hbridge* bridge)
+  open_loop_controller(motor_characteristics m, triple_hbridge* bridge)
     : motor(bridge)
     , i_max(m.v_in)
-    , max_duty(max_duty)
     , phase_resistance(m.phase_resistance)
   {
   }
 
-  void set_phases(uvh_v i)
+  void set_phases(uvh<V> i)
   {
-    using namespace mp_units;
-    auto normalize = [this](auto i) -> float {
-      return (i / i_max).numerical_value_in(one);
-    };
-    motor->u.set_duty_tristate(saturate(normalize(i.u), max_duty));
-    motor->v.set_duty_tristate(saturate(normalize(i.v), max_duty));
-    motor->h.set_duty_tristate(saturate(normalize(i.h), max_duty));
+    motor->set_duty(i / i_max);
   }
 
   void loop(radians rotor)
   {
-    dq0_v output{};
+    dq0<V> output{};
     output.q = target * 2 * phase_resistance;
 
     set_phases(inverse_clark_park(output, rotor));
@@ -183,7 +165,6 @@ private:
   // todo fix this to strong_ptr
   triple_hbridge* motor;
   volts i_max;
-  float max_duty;
   amps target;
   ohms phase_resistance;
 };
