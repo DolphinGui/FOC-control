@@ -197,7 +197,20 @@ The field oriented control algorithm is as such: we first determine our rotor an
 
 \subsubsection{Space Vector Modulation}
 
-Notably however, the inverse Clarke-Park transform is not the best way to control the motor. The maximum magnitude output by such a transform is $\sin(60^\circ)$ of the input voltage, which is about 86\% of the input voltage. This discrepancy comes from the fact that at no point are all of the switchs' PWM at 100\%. i.e. when at $\theta=0$, phase u would be at 100\%, but phases w and v would be at -86\%. Space Vector Control gets around this by not outputing sine waves, but instead breaking down the space into 6 vectors and switching between vectors. Depending on angle, it chooses two vectors as the components and switches between the two. This makes it possible to PWM one vector at 100\%, maintaining 100\% duty cycle and making full use of our voltage range. TODO insert graphic.
+Notably however, the inverse Clarke-Park transform is not the best way to control the motor. The maximum magnitude output by such a transform is $\sin(60^\circ)$ of the input voltage, which is about 86\% of the input voltage. This discrepancy comes from the fact that at no point are all of the switchs' PWM at 100\%. i.e. when at $\theta=0$, phase u would be at 100\%, but phases w and v would be at -86\%. Space Vector Control gets around this by not outputing sine waves, but instead breaking down the space into 6 vectors and switching between vectors. Depending on angle, it chooses two vectors as the components and switches between the two. This makes it possible to PWM one vector at 100\%, maintaining 100\% duty cycle and making full use of our voltage range. (Fig. \ref{svm_hex})
+
+\begin{figure}
+\begin{tikzpicture}
+  \draw (0,0) circle[radius=sqrt(3)];
+  \draw (-30:2) -- (30:2) -- (90:2) -- (150:2) -- (210:2) -- (270:2) -- (330:2);
+  \draw (0:0) -> (0:{sqrt(3)}) node[below, midway]{$v_{in}$} node[right]{U};
+  \draw (0:0) -> (30:2) node[above, midway]{$\frac{2}{\sqrt{3}}v_{in}$};
+  \draw (0:0) -> (120:{sqrt(3)}) node[above]{V};
+  \draw (0:0) -> (240:{sqrt(3)}) node[below left]{W};
+\end{tikzpicture}
+\caption{Voltage space of Sine (circle) vs SVM (hexagon)}
+\label{svm_hex}
+\end{figure}
 
 \subsection{Sensorless Rotor Measurement}
 
@@ -288,9 +301,64 @@ To minimize disturbing the torque of the motor, we always inject volage into the
  \label{iq_wave}
 \end{equation}
 
-Notably however, this is a sine wave, and therefore useless as an error signal. In order to extract the signal ($\sin(2\Delta\theta$), we need to extract it from the sine wave. We demodulate the signal via superheterodyning as demonstrated in \cite{dmytrohfi}, shown in figure (TODO insert tikz plot of heterodyning). This error signal is input into a phase locked loop consisting of a PI controller and an integrator. (TODO insert another tikz plot) This phase locked loop will converge on the correct angle.
+For simplicity's sake, we define saliency as the ratio between the impedance of the direct axis and the quadrature axis ($k_s=\frac{Z_d}{Z_q}$). This allows us to simplify equation \ref{iq_wave} into equation.\ref{iq_wave2}.
 
-TODO need to check if initial rotor position detection is necessary as described in \cite{SUN20226457}. \cite{dmytrohfi} makes no reference of it, and seemingly implies that it will always convege on the true angle. Given \cite{SUN20226457} uses a simplified saliency model which leaves an ambiguity whereas \cite{dmytrohfi} does not, it would imply for motors with more than one pole pair it should be fine. Further testing required.
+\begin{equation}
+  \hat{i}_q = -\frac{-(1 - k_s)V_h}{2Z_d}\cos(\omega_h t)\sin(2\Delta\theta)
+  \label{iq_wave2}
+\end{equation}
+
+Notably however, our signal is still modulated by our injection wave. This is where \cite{SUN20226457} and \cite{dmytrohfi} diverge. \cite{SUN20226457} uses a low-pass filter to extract the "DC" signal, removing our carrier frequency. \cite{dmytrohfi} uses a superheterdyne demodulator (fig. \ref{heterodyne}) to extract the signal.
+\begin{figure}
+  \begin{circuitikz}[american]
+      \draw (0,0) node[anchor=south] {$\hat{i}_q$}
+      to[short, o-] ++(1,0)
+      to[bandpass,>,l=$f_h$] ++(1,0)
+      to[short] ++(1,0) node[mixer,anchor=west](m){}
+      (m.w) node[inputarrow]{}
+      (m.s) node[inputarrow,rotate=90]{} -- ++(0,-0.5) node[oscillator,anchor=north, label={[anchor=north]below:$f_h$}]{};
+      \draw (m.e) to[bandstop,>,l=$f_h$] ++(3,0)
+      to[short, -o] ++(0,0) node[anchor=south]{$\propto\sin(2\Delta\theta)$};
+  \end{circuitikz}
+  \caption{Superheterodyning extracts error signal from high frequency carrier signal}
+  \label{heterodyne}
+\end{figure}
+
+\section{Filter Comparison}
+
+As a part of implementation, we compare the control loop described by \cite{SUN20226457} utilizing a low-pass filter and a control loop described by \cite{dmytrohfi} utilizing a superheterdyne filter. We model using a rotor speed of 100 radians per second, beyond which we assume back EMF generation is significant enough to be measured for position sensing. We include both a sinusoidal injection waveform and a pulse injection waveform in our analysis. Notably, since our hardware does not include output filtering. For this reason, a square wave was used as the injection waveform.  Regardless, the sinusoidal waveform is included in analysis for parity with the other papers.
+
+
+\subsection{Results}
+
+The algorithms of \cite{scipy} are used in simulation. For the lowpass filter approach in \cite{SUN20226457}, a 4-pole FIR filter was used. The 4-pole FIR filter was used to simulate a relatively low-computation filter that would be used in the firmware, as floating point operations are slow due to the lack of a FPU. For the heterodyning approach by \cite{dmytrohfi}, biquad filters were used for the bandpass and the bandstop filters. Biquad IIR filters were used to trade off between performance and speed. Additionally, a undersampling implementation was tested but was considered impractical. Constant polling of the ADC was necessary for FOC anyways, and the bandpass filter would have to be implemented in hardware to see performance savings.
+
+\begin{figure}
+  \includegraphics*[width=8cm]{simplots/sinusoidal_injection.jpg}
+  \caption{Sinusoidal Injection}
+  \label{sin_hfi}
+\end{figure}
+
+\subsubsection{Sinusoidal}
+
+Starting with our base case, the amplitude modulation of the rotor error signal with the pulse wave creates two lobes apart from the carrier frequency. (Figure \ref{sin_hfi}) The lowpass filter imployed by \cite{SUN20226457} attenuates this signal, but does not meaningfully seperate the carrier frequency from the signal. Superheterodyning manages to seperate the signals, at the cost of attenuation. Notably, undersampling without employin another bandpass filter results in unwanted harmonics.
+
+\subsubsection{Square Wave}
+
+\begin{figure}
+  \includegraphics*[width=8cm]{simplots/square_wave_injection.jpg}
+  \caption{50\% Pulse Wave Injection}
+  \label{sq_hfi}
+\end{figure}
+
+\begin{figure}
+  \includegraphics*[width=8cm]{simplots/10p_pulse_injection.jpg}
+  \caption{10\% Pulse Wave Injection}
+  \label{pulse_hfi}
+\end{figure}
+u
+Square waves, when compared to sine waves, contain lots of harmonics. This is noticable in the large tail of high frequencies in both figure \ref{sq_hfi} and \ref{pulse_hfi}. The superheterodyning filter however does not pick up any harmonics and filters them out. In figure \ref{sq_hfi}, the amplitude of the fundamental frequency is the same as that of the sine wave, so the end result is nearly identical to the sine wave case.
+However, in figure \ref{pulse_hfi}, the amplitude of the fundamental frequency is significantly smaller. This results in a significantly smaller signal for the superheterodyne method. Moreover, due to the waveform approaching DC behavior, the original signal is not entirely attenuated out. Due to that, the lowpass filter design manages to outperform the superheterodyne implementation by magnitudes.
 
 \section{Implementation}
 
