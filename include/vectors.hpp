@@ -15,8 +15,7 @@ struct uvh
 template<auto R1, auto R2>
 auto operator*(uvh<R1> vec, mp_units::quantity<R2, float> scalar)
 {
-  constexpr auto ref = get_common_reference(R1, R2);
-  constexpr auto unit = get_unit(ref);
+  constexpr auto unit = get_unit(R1 * R2);
   return uvh<unit>{ vec.u * scalar, vec.v * scalar, vec.h * scalar };
 }
 template<auto R1, auto R2>
