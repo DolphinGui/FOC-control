@@ -1,7 +1,7 @@
 #pragma once
 
-#include "utility.hpp"
 #include "metaprogramming.hpp"
+#include "utility.hpp"
 #include <array>
 
 namespace foc {
@@ -43,6 +43,18 @@ struct pid_controller_t
   {
   }
 
+  // non-typed version for tuned instead of heuristic parameters
+  pid_controller_t(float kp,
+                   maybe<is_I, float> ki = {},
+                   maybe<is_D, float> kd = {},
+                   maybe<is_I, float> max = {})
+    : k_p(kp)
+    , k_i(ki)
+    , k_d(kd)
+    , i_max(max)
+  {
+  }
+
   mp_units::quantity<Out, float> loop(time dt,
                                       mp_units::quantity<In, float> current)
   {
@@ -66,7 +78,7 @@ struct pid_controller_t
       prev_err = err;
     }
 
-    return result * Out;
+    return result;
   }
 
   void reset()
@@ -85,6 +97,23 @@ struct pid_controller_t
     k_d = kd;
     i_max = max;
     reset();
+  }
+
+  void set_kp_raw(float f)
+  {
+    k_p = f * gain;
+  }
+
+  void set_ki_raw(float f)
+    requires(is_I)
+  {
+    k_i = f * integrated_gain;
+  }
+
+  void set_kd_raw(float f)
+    requires(is_D)
+  {
+    k_d = f * derivative_gain;
   }
 
   gain_q k_p{};
@@ -148,10 +177,8 @@ struct biquad_filt
     for (size_t i = 0; i < 2; ++i) {
       y += xs[i] * coef.b[i + 1] + ys[i] * coef.a[i];
     }
-    for (int i = 1; i >= 0; --i) {
-      xs[i] = xs[i - 1];
-      ys[i] = ys[i - 1];
-    }
+    xs[1] = xs[0];
+    ys[1] = ys[0];
     xs[0] = x;
     ys[0] = y;
 
@@ -167,17 +194,4 @@ private:
   std::array<mp_units::quantity<R, float>, 2> xs;
   std::array<mp_units::quantity<R, float>, 2> ys;
 };
-
-[[maybe_unused]]
-inline void test_pid()
-{
-  using namespace mp_units;
-  using namespace mp_units::si;
-  using namespace mp_units::si::unit_symbols;
-  pid_controller<rad, rad> pid(
-    1.0f * one, 1.0f / second, 1.0f * second, 10.0f * second * rad);
-  pid.target = 180 * deg;
-  [[maybe_unused]]
-  auto out = pid.loop(0.10 * ms, 0 * deg);
-}
 }  // namespace foc
