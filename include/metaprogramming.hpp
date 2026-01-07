@@ -18,7 +18,7 @@ template<typename T>
 struct optional
 {
   bool exists = false;
-  T value;
+  T value{};
   constexpr optional() = default;
   constexpr optional(T t)
     : exists(true)
