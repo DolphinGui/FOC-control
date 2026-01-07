@@ -4,7 +4,6 @@
 #include <mp-units/framework.h>
 #include <mp-units/systems/si/units.h>
 #include <stdexcept>
-#include <tuple>
 
 #include "filters.hpp"
 #include "peripherals.hpp"
@@ -259,14 +258,14 @@ private:
   }
 
   constexpr static mp::quantity<si::radian / si::second, float>
-    injection_frequency = 1000 * 2 * M_PI * si::radian / si::second;
+    injection_frequency = 1000 * revolution / si::second;
   // this is stupid but pow is not constexpr so bite me
   constexpr static mp::quantity<mp::pow<4>(si::radian / si::second), float> w4 =
     injection_frequency * injection_frequency * injection_frequency *
     injection_frequency;
 
   constexpr static milliseconds injection_period =
-    (2 * M_PI * si::radian) / (injection_frequency);
+    1 * revolution / (injection_frequency);
 
   constexpr static volts injection_mag = 10 * si::volt;
 
