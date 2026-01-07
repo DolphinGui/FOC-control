@@ -20,53 +20,18 @@
 #include <resource_list.hpp>
 
 #include "angle.hpp"
+#include "example_motor.hpp"
 #include "foc.hpp"
+#include "mock_peripherals.hpp"
 #include "utility.hpp"
+#include <mp-units/compat_macros.h>
 
-// This is only global so that the terminate handler can use the resources
-// provided.
 resource_list resources{};
-
-[[noreturn]] void terminate_handler() noexcept
-{
-  bool valid = resources.status_led && resources.clock;
-
-  if (not valid) {
-    // spin here until debugger is connected
-    while (true) {
-      continue;
-    }
-  }
-
-  // Otherwise, blink the led in a pattern, and wait for the debugger.
-  // In GDB, use the `where` command to see if you have the `terminate_handler`
-  // in your stack trace.
-
-  auto& led = *resources.status_led.value();
-  auto& clock = *resources.clock.value();
-
-  while (true) {
-    using namespace std::chrono_literals;
-    led.level(false);
-    hal::delay(clock, 100ms);
-    led.level(true);
-    hal::delay(clock, 100ms);
-    led.level(false);
-    hal::delay(clock, 100ms);
-    led.level(true);
-    hal::delay(clock, 1000ms);
-  }
-}
 
 void application();
 
 int main()
 {
-  // Setup the terminate handler before we call anything that can throw
-  hal::set_terminate(terminate_handler);
-
-  // Initialize the platform and set as many resources as available for this the
-  // supported platforms.
   initialize_platform(resources);
 
   try {
@@ -77,9 +42,7 @@ int main()
                  "A resource required by the application was not available!\n"
                  "Calling terminate!\n");
     }
-  }  // Allow any other exceptions to terminate the application
-
-  // Terminate if the code reaches this point.
+  }
   std::terminate();
 }
 
@@ -89,33 +52,32 @@ void application()
   using namespace mp_units::si;
   using namespace mp_units;
 
-  // Calling `value()` on the optional resources will perform a check and if the
-  // resource is not set, it will throw a std::bad_optional_access exception.
-  // If it is set, dereference it and store the address in the references below.
-  // When std::optional<T&> is in the standard, we will change to use that.
   auto& led = *resources.status_led.value();
   auto& clock = *resources.clock.value();
   auto& console = *resources.console.value();
 
-  foc::motor_characteristics m;
-
-  foc::triple_hbridge hbridge;
-  foc::current_sensor u, v, h;
-  foc::closed_loop_controller controller(m, 500.f * rev / minute, 40 * volt, 0.80f, &hbridge);
-  foc::flux_linkage_observer observer(40 * volt, m);
-
   hal::print(console, "Starting Application!\n");
 
   hal::u64 prev_time = clock.uptime();
+
+  mock_hbridge h;
+  mock_shunt s;
+  mock_encoder e;
+  sensorless_motor m = sensorless_motor::create(clock, &h, &s, &e);
+
+  size_t i = 0;
+
   for (;;) {
     hal::u64 now = clock.uptime();
     hal::u64 delta_time = now - prev_time;
     prev_time = now;
     quantity<milli<second>, float> dt = delta_time / clock.frequency() * second;
-    foc::uvh i{ u.get_current(), v.get_current(), h.get_current() };
-    foc::ab a = foc::clarke(i);
-    foc::radian rotor = observer.estimate_angle(dt, hbridge, a);
-    foc::dq0 d = foc::park(a, rotor);
-    controller.loop(dt, rotor, d);
+    m.loop(dt);
+    if (i >= 1024) {
+      i = 0;
+      hal::print<128>(console,
+                      "Loop time in milliseconds: %f",
+                      double(dt.numerical_value_in(milli<second>)));
+    }
   }
 }

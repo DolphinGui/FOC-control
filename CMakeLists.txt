@@ -38,7 +38,7 @@ add_executable(${PROJECT_NAME}
 )
 
 target_compile_options(${PROJECT_NAME} PRIVATE -g -Wall -Wextra --save-temps)
-target_include_directories(${PROJECT_NAME} PUBLIC include .)
+target_include_directories(${PROJECT_NAME} PUBLIC include src)
 target_link_libraries(${PROJECT_NAME} PRIVATE
     libhal::$ENV{LIBHAL_PLATFORM_LIBRARY}
     libhal::util

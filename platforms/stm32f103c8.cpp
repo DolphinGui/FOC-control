@@ -19,15 +19,12 @@
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
 
-
-
-#include <resource_list.hpp>
+#include "resource_list.hpp"
 
 void initialize_platform(resource_list& p_list)
 {
   using namespace hal::literals;
 
-  p_list.reset = +[]() { hal::cortex_m::reset(); };
   // Set the MCU to the maximum clock speed
   hal::stm32f1::maximum_speed_using_internal_oscillator();
 

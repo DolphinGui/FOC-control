@@ -42,7 +42,7 @@ struct sensorless_motor
     using namespace mp_units::si;
     using namespace mp_units;
     quantity<milli<second>, float> dt = delta_time;
-    auto i = shunts.get_current();
+    auto i = shunts->get_current();
     foc::ab a = foc::clarke(i);
     foc::radians rotor;
     foc::volts injection_voltage{};
@@ -51,7 +51,7 @@ struct sensorless_motor
       injection_voltage = v;
       rotor = r;
     } else {
-      rotor = observer.estimate_angle(dt, hbridge, a);
+      rotor = observer.estimate_angle(dt, *hbridge, a);
       hfi.update(dt, rotor);
     }
     if (iteration > 100) {
@@ -63,7 +63,7 @@ struct sensorless_motor
       slow = v < 628 * rad / s;
       switch (mode) {
         case control_mode::pos:
-          w_pid.target = theta_pid.loop(dt, output_encoder.get_angle());
+          w_pid.target = theta_pid.loop(dt, output_encoder->get_angle());
           [[fallthrough]];
         case control_mode::vel:
           torque_controller.set_torque(w_pid.loop(dt, v));
@@ -95,27 +95,32 @@ struct sensorless_motor
     torque_controller.set_torque(t / kt);
   }
 
-  sensorless_motor create(hal::steady_clock& clk)
+  static sensorless_motor create(hal::steady_clock& clk,
+                                 foc::triple_hbridge* hbridge,
+                                 foc::triple_current_sensor* shunts,
+                                 foc::encoder* encoder)
   {
-    foc::triple_hbridge hbridge;
-    foc::triple_current_sensor shunts;
-    auto [r, s] =
-      foc::hfi_observer::initialization(clk, hbridge, shunts, characteristics);
-    foc::hfi_observer hfi(r, s);
+    // unsure if necessary, check later
+    //   auto [r, s] =
+    //     foc::hfi_observer::initialization(clk, *hbridge, shunts,
+    //     characteristics);
+    foc::hfi_observer hfi(0.0 * mp_units::si::radian,
+                          1.0 * mp_units::si::ampere);
 
-    return sensorless_motor(std::move(hbridge), std::move(shunts), {}, r, s);
+    return sensorless_motor(
+      hbridge, shunts, encoder, {}, 1.0f * mp_units::si::ampere);
   }
 
 private:
-  sensorless_motor(foc::triple_hbridge&& h,
-                   foc::triple_current_sensor&& i,
-                   foc::encoder&& e,
+  sensorless_motor(foc::triple_hbridge* h,
+                   foc::triple_current_sensor* i,
+                   foc::encoder* e,
                    foc::radians rotor,
                    foc::amps saliency)
-    : hbridge(std::move(h))
-    , shunts(std::move(i))
-    , output_encoder(std::move(e))
-    , torque_controller(characteristics, 2730 * rpm, 0.1125f, &hbridge)
+    : hbridge(h)
+    , shunts(i)
+    , output_encoder(e)
+    , torque_controller(characteristics, 2730 * rpm, hbridge)
     , observer(characteristics)
     , hfi(rotor, saliency)
     , theta_pid(1.0f / ms, 0.1f / ms / s)
@@ -124,9 +129,9 @@ private:
   {
   }
 
-  foc::triple_hbridge hbridge;
-  foc::triple_current_sensor shunts;
-  foc::encoder output_encoder;
+  foc::triple_hbridge* hbridge;
+  foc::triple_current_sensor* shunts;
+  foc::encoder* output_encoder;
   foc::closed_loop_controller torque_controller;
   foc::flux_linkage_observer observer;
   foc::hfi_observer hfi;

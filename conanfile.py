@@ -22,9 +22,9 @@ class demos(ConanFile):
     python_requires_extend = "libhal-bootstrap.demo"
 
     def configure(self):
-        self.options["fmt/*"].header_only = True
-        self.options["fmt/*"].with_os_api = False
-        self.options["fmt/*"].with_unicode = False
+        # self.options["mp-units/*"].freestanding = True
+        self.options["mp-units/*"].contracts = "none"
+        self.options["mp-units/*"].std_format = True
 
     def requirements(self):
         bootstrap = self.python_requires["libhal-bootstrap"]
