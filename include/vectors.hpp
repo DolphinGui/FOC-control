@@ -11,6 +11,11 @@ struct uvh
 {
   mp_units::quantity<U, Repr> u, v, h;
 };
+template<auto U, typename Repr>
+uvh<U, Repr> uvh_full_of(mp_units::quantity<U, Repr> q)
+{
+  return uvh<U, Repr>{ q, q, q };
+}
 
 template<auto R1, auto R2>
 auto operator*(uvh<R1> vec, mp_units::quantity<R2, float> scalar)
@@ -35,6 +40,12 @@ auto operator/(mp_units::quantity<R1, float> scalar, uvh<R2> vec)
 {
   constexpr auto unit = get_unit(R1 / R2);
   return uvh<unit>{ scalar / vec.u, scalar / vec.v, scalar / vec.h };
+}
+
+template<auto R1>
+auto operator-(uvh<R1> v1, uvh<R1> v2)
+{
+  return uvh<R1>{ v1.u - v2.u, v1.v - v2.v, v1.h - v2.h };
 }
 
 template<auto U>
@@ -133,10 +144,10 @@ inline uvh<R> inverse_clark_park(dq0<R> i, radians theta) noexcept
   using namespace mp_units::si::unit_symbols;
   radians phase_offset = 60 * si::degree;
 
-  volts u = si::cos(theta) * i.d - si::sin(theta) * i.q;
-  volts v =
+  auto u = si::cos(theta) * i.d - si::sin(theta) * i.q;
+  auto v =
     si::cos(theta - phase_offset) * i.q - si::sin(theta - phase_offset) * i.d;
-  volts h =
+  auto h =
     si::cos(theta + phase_offset) * i.q - si::sin(theta + phase_offset) * i.d;
   return { u, v, h };
 }
