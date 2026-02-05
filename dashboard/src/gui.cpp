@@ -4,12 +4,10 @@
 #include <memory>
 #include <stdexcept>
 
-#include <glad/gl.h>
-
-#include <GLFW/glfw3.h>
-
 #include "imgui/imgui_impl_glfw.h"
 #include "imgui/imgui_impl_opengl3.h"
+
+#include <GLFW/glfw3.h>
 
 static void error_callback(int error, char const* description)
 {
@@ -18,7 +16,7 @@ static void error_callback(int error, char const* description)
 
 GUI::GUI()
 {
-  this->inner = std::make_unique<State>();
+  this->inner = std::make_unique<Internal>();
 }
 
 GUI::~GUI()
@@ -30,7 +28,6 @@ struct GLFW
 {
   GLFW()
   {
-    std::printf("init glfw\n");
     glfwSetErrorCallback(error_callback);
     glfwInit();
   }
@@ -38,24 +35,22 @@ struct GLFW
   GLFW(GLFW const&) = delete;
   ~GLFW()
   {
-    std::printf("terminating glfw\n");
     glfwTerminate();
   }
 };
 }  // namespace
-struct GUI::State
+struct GUI::Internal
 {
 
   constexpr static auto deleter = [](auto w) noexcept {
     if (w)
       glfwDestroyWindow(w);
-    std::printf("terminating window: 0x%lx\n", (uint64_t)w);
   };
   using Window = Resource<GLFWwindow*, decltype(deleter)>;
   GLFW g;
   Window window;
 
-  State()
+  Internal()
   {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
@@ -93,10 +88,10 @@ struct GUI::State
 
     ImGui_ImplGlfw_InitForOpenGL(*window, true);
 
-    ImGui_ImplOpenGL3_Init();
+    ImGui_ImplOpenGL3_Init("#version 300 es");
   }
 
-  ~State()
+  ~Internal()
   {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
@@ -104,10 +99,31 @@ struct GUI::State
   }
 };
 
-void GUI::poll()
+void GUI::poll(::State& s)
 {
   glfwPollEvents();
   if (glfwGetWindowAttrib(*this->inner->window, GLFW_ICONIFIED) != 0) {
     ImGui_ImplGlfw_Sleep(10);
   }
+
+  ImGui_ImplOpenGL3_NewFrame();
+  ImGui_ImplGlfw_NewFrame();
+  ImGui::NewFrame();
+  if (s.show_demo)
+    ImGui::ShowDemoWindow(&s.show_demo);
+
+  ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+  ImGui::Render();
+  int display_w, display_h;
+  auto window = *this->inner->window;
+  glfwGetFramebufferSize(window, &display_w, &display_h);
+  glViewport(0, 0, display_w, display_h);
+  glClearColor(clear_color.x * clear_color.w,
+               clear_color.y * clear_color.w,
+               clear_color.z * clear_color.w,
+               clear_color.w);
+  glClear(GL_COLOR_BUFFER_BIT);
+  ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+  glfwSwapBuffers(window);
 }

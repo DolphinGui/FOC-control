@@ -4,7 +4,6 @@ project(foc_dash CXX)
 find_package(asio REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(fmt REQUIRED)
-find_package(glad REQUIRED)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -36,7 +35,7 @@ target_include_directories(implot PUBLIC src/implot)
 
 target_link_libraries(imgui glfw)
 target_link_libraries(implot imgui)
-target_link_libraries(foc_dash asio::asio glfw fmt::fmt glad::glad implot imgui opengl::opengl)
+target_link_libraries(foc_dash asio::asio glfw fmt::fmt implot imgui opengl::opengl)
 
 install(
     TARGETS foc_dash

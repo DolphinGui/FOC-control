@@ -23,7 +23,6 @@ class foc_dashRecipe(ConanFile):
         "argparse/[>=3.2]",
         "asio/[>=1.36]",
         "fmt/[>=12.1.0]",
-        "glad/[>=2.0.8]"
     )
 
     def configure(self):
