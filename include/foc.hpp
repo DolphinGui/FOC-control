@@ -6,7 +6,6 @@
 #include <mp-units/systems/si.h>
 
 #include "filters.hpp"
-#include "metaprogramming.hpp"
 #include "peripherals.hpp"
 #include "utility.hpp"
 #include "vectors.hpp"

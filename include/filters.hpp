@@ -3,6 +3,7 @@
 #include "metaprogramming.hpp"
 #include "utility.hpp"
 #include <array>
+#include <mp-units/math.h>
 
 namespace foc {
 
@@ -14,7 +15,8 @@ template<auto In,
          auto Time = mp_units::si::second,
          bool is_I = true,
          bool is_D = true,
-         tmp::optional<mp_units::quantity<In, float>> const_target = {}>
+         tmp::optional<mp_units::quantity<In, float>> const_target = {},
+         tmp::optional<mp_units::quantity<In, float>> modulus = {}>
 struct pid_controller_t
 {
   using time = mp_units::quantity<mp_units::si::second, float>;
@@ -66,6 +68,11 @@ struct pid_controller_t
     } else {
       err = target - current;
     }
+
+    if constexpr (modulus.exists) {
+      err = fmod(err, modulus.value);
+    }
+
     quantity result = k_p * err;
     if constexpr (is_I) {
       total_err = saturate(total_err + (err * dt), i_max);
@@ -134,19 +141,23 @@ using pi_controller =
   pid_controller_t<In, Out, mp_units::si::second, true, false>;
 template<auto In, auto Out>
 using zero_pi_controller =
-  pid_controller_t<In, Out, mp_units::si::second, true, false>;
+  pid_controller_t<In, Out, mp_units::si::second, true, false, { 0 * In }>;
 
-template<auto R>
+template<auto R, std::array coef>
 struct lowpass
 {
-  constexpr lowpass(milliseconds time_constant, milliseconds sample_period)
+  constexpr lowpass()
   {
-    a = sample_period / (time_constant + sample_period);
   }
   mp_units::quantity<R, float> loop(mp_units::quantity<R, float> x)
   {
-    auto y = a * x + (1 - a) * prev;
-    prev = y;
+    mp_units::quantity<R, float> y = x * coef[0];
+    y += prev[0] * coef[1];
+    y += prev[1] * coef[2];
+    y += prev[2] * coef[3];
+    prev[2] = prev[1];
+    prev[1] = prev[0];
+    prev[0] = x;
     return y;
   }
 
@@ -156,8 +167,8 @@ struct lowpass
   }
 
 private:
-  mp_units::quantity<R, float> prev;
-  mp_units::quantity<mp_units::one, float> a;
+  using Quant = mp_units::quantity<R, float>;
+  std::array<Quant, coef.size() - 1> prev{};
 };
 
 struct biquad_coef

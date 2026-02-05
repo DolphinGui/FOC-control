@@ -185,12 +185,15 @@ struct hfi_observer
   std::pair<volts, radians> loop(milliseconds dt, amps i_q)
   {
     time += dt;
-    auto err = heterodyne_filt(superheterodyner(i_q) * 2 *
-                               si::sin(time * injection_frequency)) /
-               k_s;
+    auto err = lp_filter(i_q / k_s);
     update_controller(dt, err);
     rotor += dt * speed_err;
-    auto voltage = si::cos(time * injection_frequency) * injection_mag;
+
+    volts voltage = {};
+    if (time < injection_period * 0.05){
+      voltage = injection_mag;
+    }
+
     time = remainder(time, injection_period);
     return { voltage, rotor };
   }
@@ -271,21 +274,16 @@ private:
 
   constexpr static float duty = 0.01f;
   constexpr static float sample_delay = 0.001f;
-  // call filt_gen with 10kHz sample frequency, corner frequencies of 950 Hz and
-  // 1050 Hz
-  constexpr static biquad_coef bp_coef = { { 0.03046875, 0., -0.03046875 },
-                                           { -1.56950898, 0.93906251 } };
-  constexpr static biquad_coef bs_coef = {
-    { 0.96953125, -1.56950898, 0.96953125 },
-    { -1.56950898, 0.93906251 }
-  };
-
+  constexpr static std::array lp_coef = { 0.00761991f,
+                                          0.18419432f,
+                                          0.18419432f,
+                                          0.00761991f };
+  lowpass<mp::si::radian, lp_coef> lp_filter;
   radians rotor;
   saliency k_s;
   milliseconds time{};
   mp::quantity<si::radian / mS, float> speed_err{};
-  biquad_filt<si::ampere, bp_coef> superheterodyner;
-  biquad_filt<si::ampere, bs_coef> heterodyne_filt;
+
   zero_pi_controller<si::radian, si::radian / mS> err_controller;
 };
 

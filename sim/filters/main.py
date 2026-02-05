@@ -48,7 +48,10 @@ argparser.add_argument(
     help="Force GUI output for response graph",
     action=BooleanOptionalAction,
 )
+fs = 10
+print(signal.firwin2(20, [0, fs / 2], [1.0, 0], fs = fs))
 
+exit(0)
 
 def main():
     args = argparser.parse_args()

@@ -2,71 +2,79 @@ from scipy import signal
 from scipy.fft import fft, fftfreq, fftshift
 import matplotlib.pyplot as plt
 import numpy as np
-from math import pi, exp
+from numpy import cos, sin
+from math import pi, exp, sqrt
 import re
 
-samples = 100000
-sample_length = 10 * pi / 100
-sample_period = sample_length / samples
-freq = 1 / sample_period
-x = np.linspace(0, sample_length, samples)
+# all frequencies are in hz / rotations per second
+fpwm = 100_000
+ffoc = 10_000
+fhfi = 1_000
+frotor = 100
+
+t = 1 / frotor
+
+# n refers to sample
+n_samples = 10
+# time axis of the motor
+tm = np.linspace(0, t, n_samples * fpwm)
+# time axis of filter
+tf = np.linspace(0, t, n_samples * ffoc)
 
 
-def first_order_lp(y):
-    taps = signal.firwin2(
-        4,
-        [0.0, 1 / 100, 1 / 50, freq / 2],
-        [1.0, 1.0, 0.4, 0.0],
-        fs=freq,
+# expects a signal of length tf
+def sin_voltage(d):
+    # for sake of analysis we assume we already know the angle. we are analyzing
+    # the filter's ability to distinguish motor angle HFI carrier frequency
+    q = np.zeros(np.shape(d))
+    dq = np.stack([d, q])
+    clarke = sqrt(2 / 3) * np.matrix(
+        [[1, 0], [-0.5, sqrt(3) / 2], [-0.5, -sqrt(3) / 2]]
     )
-    return signal.convolve(taps, y, mode="valid")
+    theta = tf * 2 * pi * frotor
+    c = cos(theta)
+    s = sin(theta)
+
+    park = np.stack([[c, s], [-s, c]])  # shape: (100, 2, 2)
+    aby = np.einsum("ijn,in->jn", park, dq)
+    abc = np.einsum("ij,jn->in", clarke, aby)
+    ratio = fpwm / ffoc
+    abc = np.repeat(abc, ratio, axis=1)
+    print(f"abc shape: {np.shape(abc)}")
+    print(f"tm shape: {np.shape(tm)}")
+    print(f"ratio: {ratio}")
+    time = tm * fpwm / frotor * 2 * pi
+    v_a = signal.square(time, duty=(abc[0] + 1) / 2) * 2 - 1
+    v_b = signal.square(time, duty=(abc[1] + 1) / 2) * 2 - 1
+    v_c = signal.square(time, duty=(abc[2] + 1) / 2) * 2 - 1
+    return np.array([v_a, v_b, v_c])
 
 
-def heterodyne(y):
-    bp = signal.butter(1, [900, 1100], btype="bandpass", output="sos", fs=freq)
-    lbp = signal.butter(1, 110, btype="lowpass", output="sos", fs=freq)
-    lo = np.sin(1000 * x * 2 * pi)
-    return signal.sosfilt(lbp, lo * signal.sosfilt(bp, y))
+def motor(v):
+    # based on https://www.cubemars.com/product/ak60-39-v3-0-kv80-robotic-actuator.html
+    r = 600e-3
+    l = 670e-6
+    # a made up number that is hopefully good enough, l_d / l_q
+    saliency = 1.2
+    def i_motor(t, v, theta):
 
-
-def undersample_het(y):
-    bp = signal.butter(1, [900, 1100], btype="bandpass", output="sos", fs=freq)
-    mixed = signal.sosfilt(bp, y) * np.sin(1000 * x * 2 * pi)
-    return np.repeat(mixed[::8], 8)
-
-
-p = samples // 2
-
-
-def fourier(x):
-    return np.abs(fft(x)[:p])
-
-
+    pass
 
 
 def do_plot(inject, name):
-    y_m = np.sin(x * 100 * 2 * pi)
-    y = y_m * inject
-    xf = fftfreq(samples, sample_period)[:p]
-    y2 = first_order_lp(y)
-    y_h = heterodyne(y)
-    y_u = undersample_het(y)
-    plt.clf()
-    plt.xscale("log")
-    plt.plot(xf[10:80000], fourier(y_m)[10:80000], label="Signal")
-    plt.plot(xf[10:80000], fourier(y)[10:80000], label="Input")
-    plt.plot(xf[10:80000], fourier(y2)[10:80000], label="Lowpass")
-    plt.plot(xf[10:80000], fourier(y_h)[10:80000], label="Heterodyne")
-    plt.plot(xf[10:80000], fourier(y_u)[10:80000], label="Undersampling")
-    plt.plot(xf[10:80000], fourier(inject)[10:80000], label="Carrier")
+    y = sin_voltage(inject)
+    print(f"t shape: {np.shape(tm)}")
+    print(f"y shape: {np.shape(y)}")
+    plt.plot(tm, y[0], label="a")
+    plt.plot(tm, y[1], label="b")
+    plt.plot(tm, y[2], label="c")
     plt.title(name)
-    plt.legend()
-    pat = re.compile(r"\s")
-    filename = pat.sub("_", name.lower()) + ".jpg"
-    plt.savefig(fname="out/" + filename)
+    # plt.legend()
+    plt.show()
+    # pat = re.compile(r"\s")
+    # filename = pat.sub("_", name.lower()) + ".jpg"
+    # plt.savefig(fname="out/" + filename)
 
 
-do_plot(np.sin(1000 * x * 2 * pi), "Sinusoidal Injection")
-do_plot(signal.square(1000 * x * 2 * pi, duty=0.5), "Square Wave Injection")
-do_plot(signal.square(1000 * x * 2 * pi, duty=0.1), "10% Pulse Injection")
-
+# do_plot(np.ones(n_samples), "one")
+do_plot(signal.square(tf * 2 * pi * 1), "square")

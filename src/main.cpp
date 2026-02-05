@@ -51,33 +51,43 @@ void application()
   using namespace mp_units::angular::unit_symbols;
   using namespace mp_units::si;
   using namespace mp_units;
+  using namespace std::chrono_literals;
 
   auto& led = *resources.status_led.value();
   auto& clock = *resources.clock.value();
-  auto& console = *resources.console.value();
+  // auto& console = *resources.console.value();
 
-  hal::print(console, "Starting Application!\n");
-
-  hal::u64 prev_time = clock.uptime();
-
-  mock_hbridge h;
-  mock_shunt s;
-  mock_encoder e;
-  sensorless_motor m = sensorless_motor::create(clock, &h, &s, &e);
-
-  size_t i = 0;
-
-  for (;;) {
-    hal::u64 now = clock.uptime();
-    hal::u64 delta_time = now - prev_time;
-    prev_time = now;
-    quantity<milli<second>, float> dt = delta_time / clock.frequency() * second;
-    m.loop(dt);
-    if (i >= 1024) {
-      i = 0;
-      hal::print<128>(console,
-                      "Loop time in milliseconds: %f",
-                      double(dt.numerical_value_in(milli<second>)));
-    }
+  for(;;){
+    led.level(true);
+    hal::delay(clock, 1s);
+    led.level(false);
+    // hal::print(console, "Hello World\n");
+    hal::delay(clock, 1s);
   }
+
+  // hal::print(console, "Starting Application!\n");
+
+  // hal::u64 prev_time = clock.uptime();
+
+  // mock_hbridge h;
+  // mock_shunt s;
+  // mock_encoder e;
+  // sensorless_motor m = sensorless_motor::create(clock, &h, &s, &e);
+
+  // size_t i = 0;
+
+  // for (;;) {
+  //   hal::u64 now = clock.uptime();
+  //   hal::u64 delta_time = now - prev_time;
+  //   prev_time = now;
+  //   quantity<milli<second>, float> dt = delta_time / clock.frequency() * second;
+  //   m.loop(dt);
+  //   ++i;
+  //   if (i >= 1024) {
+  //     i = 0;
+  //     hal::print<128>(console,
+  //                     "Loop time in milliseconds: %f",
+  //                     double(dt.numerical_value_in(milli<second>)));
+  //   }
+  // }
 }
