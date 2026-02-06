@@ -1,10 +1,12 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 struct State
 {
   bool show_demo;
+  std::vector<float> data;
 };
 
 struct GUI

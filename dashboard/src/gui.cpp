@@ -1,11 +1,12 @@
 #include "gui.hpp"
 #include "resource.hpp"
-#include <cstdint>
 #include <memory>
 #include <stdexcept>
 
 #include "imgui/imgui_impl_glfw.h"
 #include "imgui/imgui_impl_opengl3.h"
+
+#include "implot/implot.h"
 
 #include <GLFW/glfw3.h>
 
@@ -73,6 +74,7 @@ struct GUI::Internal
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    ImPlot::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |=
       ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
@@ -93,6 +95,7 @@ struct GUI::Internal
 
   ~Internal()
   {
+    ImPlot::DestroyContext();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -111,6 +114,17 @@ void GUI::poll(::State& s)
   ImGui::NewFrame();
   if (s.show_demo)
     ImGui::ShowDemoWindow(&s.show_demo);
+
+  // plot stuff
+  ImPlot::BeginPlot("A plot");
+  // void PlotLine(const char* label_id, const T* values, int count, double
+  // xscale, double x0, ImPlotLineFlags flags, int offset, int stride) {
+  ImPlot::SetupAxes("time", "mag");
+  ImPlot::SetupAxesLimits(0, 200, -1, 1);
+  ImPlot::PlotLine("Angle", s.data.data(), s.data.size());
+  ImPlot::EndPlot();
+
+  // ImPlot::ShowDemoWindow();
 
   ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
   ImGui::Render();
