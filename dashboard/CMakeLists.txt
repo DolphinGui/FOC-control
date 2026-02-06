@@ -5,11 +5,13 @@ find_package(asio REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(fmt REQUIRED)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_executable(foc_dash src/main.cpp src/gui.cpp)
+add_compile_options(-Wall -Wextra -Wpedantic)
+
+add_executable(foc_dash src/main.cpp src/gui.cpp src/state.cpp)
 
 add_library(
     imgui

@@ -1,5 +1,10 @@
 #include "gui.hpp"
 #include "resource.hpp"
+#include "state.hpp"
+#include <asio/any_io_executor.hpp>
+#include <asio/steady_timer.hpp>
+#include <asio/use_awaitable.hpp>
+#include <cstdio>
 #include <memory>
 #include <stdexcept>
 
@@ -13,15 +18,6 @@
 static void error_callback(int error, char const* description)
 {
   fprintf(stderr, "Error 0x%x: %s\n", error, description);
-}
-
-GUI::GUI()
-{
-  this->inner = std::make_unique<Internal>();
-}
-
-GUI::~GUI()
-{
 }
 
 namespace {
@@ -102,6 +98,15 @@ struct GUI::Internal
   }
 };
 
+GUI::GUI()
+{
+  this->inner = std::make_unique<Internal>();
+}
+
+GUI::~GUI()
+{
+}
+
 void GUI::poll(::State& s)
 {
   glfwPollEvents();
@@ -117,11 +122,11 @@ void GUI::poll(::State& s)
 
   // plot stuff
   ImPlot::BeginPlot("A plot");
-  // void PlotLine(const char* label_id, const T* values, int count, double
-  // xscale, double x0, ImPlotLineFlags flags, int offset, int stride) {
   ImPlot::SetupAxes("time", "mag");
   ImPlot::SetupAxesLimits(0, 200, -1, 1);
-  ImPlot::PlotLine("Angle", s.data.data(), s.data.size());
+  for (auto&& [_, d] : s.datasets) {
+    ImPlot::PlotLine(d.fullname.c_str(), d.data.data(), d.data.size());
+  }
   ImPlot::EndPlot();
 
   // ImPlot::ShowDemoWindow();

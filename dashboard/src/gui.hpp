@@ -1,13 +1,10 @@
 #pragma once
 
+#include <asio/any_io_executor.hpp>
+#include <asio/awaitable.hpp>
 #include <memory>
-#include <vector>
 
-struct State
-{
-  bool show_demo;
-  std::vector<float> data;
-};
+struct State;
 
 struct GUI
 {
@@ -20,3 +17,4 @@ struct GUI
 private:
   std::unique_ptr<Internal> inner;
 };
+

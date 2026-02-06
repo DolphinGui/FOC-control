@@ -1,28 +1,41 @@
+#include "broadcast.hpp"
 #include "gui.hpp"
-#include <algorithm>
-#include <chrono>
+#include "state.hpp"
+#include <asio/any_io_executor.hpp>
+#include <asio/co_spawn.hpp>
+#include <asio/detached.hpp>
+#include <asio/io_context.hpp>
+#include <asio/steady_timer.hpp>
+#include <asio/use_awaitable.hpp>
 #include <cmath>
 #include <fmt/base.h>
 #include <stdexcept>
-#include <thread>
+
+asio::awaitable<void> emit_data(asio::any_io_executor io, Broadcaster& b)
+{
+  size_t i = 0;
+  for (;;) {
+    float angle = static_cast<float>(std::sin(i * 0.1));
+    asio::steady_timer t(io, asio::chrono::milliseconds(10));
+    co_await t.async_wait(asio::use_awaitable);
+    b.emit(AddDataMsg{ "th", angle });
+    i++;
+  }
+}
 
 int main()
 {
   try {
-    GUI gui;
-    State s;
-    s.show_demo = true;
-    s.data.resize(200, 0.0f);
+    asio::io_context context;
+    Broadcaster broadcast;
+    State s(broadcast, context);
     using namespace std::chrono_literals;
-    auto later = std::chrono::system_clock().now() + 10s;
-    size_t i = 0;
-    while (std::chrono::system_clock().now() < later) {
-      s.data[0] = std::sin(i * 0.1);
-      std::rotate(s.data.begin(), s.data.begin() + 1, s.data.end());
-      printf("setting %lu to %f\n", i, s.data[i % s.data.size()]);
-      i += 1;
-      gui.poll(s);
-      std::this_thread::sleep_for(10ms);
+    broadcast.emit(AddSetMsg{ "th", "Angle" });
+    asio::co_spawn(context.get_executor(),
+                   emit_data(context.get_executor(), broadcast),
+                   asio::detached);
+    for (;;) {
+      context.run();
     }
   } catch (std::runtime_error const& r) {
     fmt::println("Encountered error: {}", r.what());
