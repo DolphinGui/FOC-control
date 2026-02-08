@@ -35,10 +35,10 @@ void initialize_platform(resource_list& p_list)
   static hal::stm32f1::output_pin led('C', 13);
   p_list.status_led = &led;
 
-  // static hal::stm32f1::uart uart1(hal::port<1>,
-  //                                 hal::buffer<128>,
-  //                                 hal::serial::settings{
-  //                                   .baud_rate = 115200,
-  //                                 });
-  // p_list.console = &uart1;
+  static hal::stm32f1::uart uart1(hal::port<1>,
+                                  hal::buffer<128>,
+                                  hal::serial::settings{
+                                    .baud_rate = 115200,
+                                  });
+  p_list.console = &uart1;
 }
