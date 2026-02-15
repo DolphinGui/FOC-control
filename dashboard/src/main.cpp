@@ -1,5 +1,6 @@
 #include "broadcast.hpp"
 #include "gui.hpp"
+#include "io.hpp"
 #include "state.hpp"
 #include <asio/any_io_executor.hpp>
 #include <asio/co_spawn.hpp>
@@ -9,6 +10,7 @@
 #include <asio/use_awaitable.hpp>
 #include <cmath>
 #include <fmt/base.h>
+#include <fmt/ranges.h>
 #include <stdexcept>
 
 asio::awaitable<void> emit_data(asio::any_io_executor io, Broadcaster& b)
@@ -26,6 +28,10 @@ asio::awaitable<void> emit_data(asio::any_io_executor io, Broadcaster& b)
 int main()
 {
   try {
+    auto devices = list_serial_devices();
+    for (auto& se : devices)
+      fmt::println("serial devices: {}: {}", se.name, se.path);
+
     asio::io_context context;
     Broadcaster broadcast;
     State s(broadcast, context);
