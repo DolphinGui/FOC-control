@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.15)
 project(foc_dash CXX)
 
+include(CheckIPOSupported)
+check_ipo_supported(RESULT supported OUTPUT error)
+if(supported)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif()
+
 find_package(asio REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(fmt REQUIRED)
@@ -11,7 +17,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_compile_options(-Wall -Wextra -Wpedantic)
 
-add_executable(foc_dash src/main.cpp src/gui.cpp src/state.cpp)
+add_executable(foc_dash src/main.cpp src/gui.cpp src/state.cpp src/io.cpp)
 
 add_library(
     imgui
@@ -37,7 +43,15 @@ target_include_directories(implot PUBLIC src/implot)
 
 target_link_libraries(imgui glfw)
 target_link_libraries(implot imgui)
-target_link_libraries(foc_dash asio::asio glfw fmt::fmt implot imgui opengl::opengl)
+target_link_libraries(
+    foc_dash
+    asio::asio
+    glfw
+    fmt::fmt
+    implot
+    imgui
+    opengl::opengl
+)
 
 install(
     TARGETS foc_dash
