@@ -13,6 +13,8 @@
 # limitations under the License.
 
 from conan import ConanFile
+from conan.tools.cmake import CMakeDeps, CMakeToolchain
+from conan.tools.env import VirtualBuildEnv
 
 required_conan_version = ">=2.2.2"
 
@@ -21,12 +23,41 @@ class demos(ConanFile):
     python_requires = "libhal-bootstrap/[^4.0.0]"
     python_requires_extend = "libhal-bootstrap.demo"
 
+    options = {
+        "platform": ["ANY"],
+        "variant": [None, "ANY"],
+        "board": [None, "ANY"]
+    }
+
+    default_options = {
+        "platform": "ANY",
+        "variant": None,
+        "board": None,
+    }
+
+
     def configure(self):
         # self.options["mp-units/*"].freestanding = True
         self.options["mp-units/*"].contracts = "none"
         self.options["mp-units/*"].std_format = True
 
+
+    def generate(self):
+        virt = VirtualBuildEnv(self)
+        virt.generate()
+        tc = CMakeToolchain(self)
+        if str(self.options.platform).startswith("rp2"):
+            if self.options.board:
+                tc.cache_variables["PICO_BOARD"] = str(self.options.board)
+        tc.generate()
+        cmake = CMakeDeps(self)
+        cmake.generate()
+
     def requirements(self):
-        bootstrap = self.python_requires["libhal-bootstrap"]
-        bootstrap.module.add_demo_requirements(self)
+        self.requires("libhal-util/[^5.4.0]")
+        self.requires("libhal-arm-mcu/latest")
+        # bootstrap = self.python_requires["libhal-bootstrap"]
+        # bootstrap.module.add_demo_requirements(self)
         self.requires("mp-units/2.4.0")
+        if str(self.options.platform).startswith("rp2"):
+          self.tool_requires("picotool/2.2.0")

@@ -1,3 +1,4 @@
+#include "libhal-arm-mcu/dwt_counter.hpp"
 #include "libhal-arm-mcu/rp/output_pin.hpp"
 #include "libhal-arm-mcu/rp/serial.hpp"
 #include "libhal-arm-mcu/rp/time.hpp"
@@ -8,7 +9,7 @@ void initialize_platform(resource_list& p_list)
 {
   using namespace hal::literals;
   namespace rp = hal::rp;
-  static rp::clock timer;
+  static auto timer = hal::cortex_m::dwt_counter(rp::core_clock());
 
   p_list.clock = &timer;
 

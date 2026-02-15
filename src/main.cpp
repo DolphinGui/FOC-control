@@ -19,13 +19,9 @@
 
 #include <resource_list.hpp>
 
-#include "angle.hpp"
 #include "example_motor.hpp"
-#include "foc.hpp"
 #include "mock_peripherals.hpp"
-#include "utility.hpp"
-#include <mp-units/compat_macros.h>
-
+#include <stdio.h>
 resource_list resources{};
 
 void application();
@@ -55,39 +51,36 @@ void application()
 
   auto& led = *resources.status_led.value();
   auto& clock = *resources.clock.value();
-  // auto& console = *resources.console.value();
+  auto& console = *resources.console.value();
 
-  for(;;){
-    led.level(true);
-    hal::delay(clock, 1s);
-    led.level(false);
-    // hal::print(console, "Hello World\n");
-    hal::delay(clock, 1s);
+  hal::print(console, "Starting Application!\n");
+
+  hal::u64 prev_time = clock.uptime();
+
+  mock_hbridge h;
+  mock_shunt s;
+  mock_encoder e;
+  sensorless_motor m = sensorless_motor::create(&h, &s, &e);
+
+  float t = 0.0;
+  bool b = false;
+
+  size_t loops = 1'000'000;
+  auto freq = clock.frequency();
+  for (;;) {
+    led.level(b);
+    b = !b;
+    for (size_t i = 0; i < loops; ++i) {
+      hal::u64 now = clock.uptime();
+      hal::u64 delta_time = now - prev_time;
+      prev_time = now;
+      quantity<milli<second>, float> dt = delta_time / freq * second;
+      m.loop(dt);
+      t += dt.numerical_value_in(milli<second>);
+    }
+    float khz = 1 / (t / loops);
+    hal::print<128>(console, "Loop frequency: %.2f khz\n", khz);
+    t = 0.0;
+    prev_time = clock.uptime();
   }
-
-  // hal::print(console, "Starting Application!\n");
-
-  // hal::u64 prev_time = clock.uptime();
-
-  // mock_hbridge h;
-  // mock_shunt s;
-  // mock_encoder e;
-  // sensorless_motor m = sensorless_motor::create(clock, &h, &s, &e);
-
-  // size_t i = 0;
-
-  // for (;;) {
-  //   hal::u64 now = clock.uptime();
-  //   hal::u64 delta_time = now - prev_time;
-  //   prev_time = now;
-  //   quantity<milli<second>, float> dt = delta_time / clock.frequency() * second;
-  //   m.loop(dt);
-  //   ++i;
-  //   if (i >= 1024) {
-  //     i = 0;
-  //     hal::print<128>(console,
-  //                     "Loop time in milliseconds: %f",
-  //                     double(dt.numerical_value_in(milli<second>)));
-  //   }
-  // }
 }

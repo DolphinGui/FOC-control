@@ -13,9 +13,15 @@
 # limitations under the License.
 
 cmake_minimum_required(VERSION 3.25)
+if(DEFINED ENV{PICO_SDK_PATH})
+set(PICO_CXX_ENABLE_EXCEPTIONS 1)
+# set(PICO_CLIB picolibc)
+set(CMAKE_ASM_FLAGS_INIT "-mcpu=cortex-m33 -mfloat-abi=hard")
+include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+endif()
 
-project(app.elf LANGUAGES CXX)
-
+project(foc-driver LANGUAGES CXX C ASM)
+set(CMAKE_EXECUTABLE_SUFFIX .elf)
 # Always check that the $ENV{LIBHAL_PLATFORM_LIBRARY} & $ENV{LIBHAL_PLATFORM}
 # environment variables are set by the profile.
 if("$ENV{LIBHAL_PLATFORM_LIBRARY}" STREQUAL "")
@@ -34,15 +40,37 @@ find_package(mp-units REQUIRED)
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
+    src/peripherals.cpp
+    src/example_motor.cpp
     platforms/$ENV{LIBHAL_PLATFORM}.cpp
 )
 
-target_compile_options(${PROJECT_NAME} PRIVATE -g -Wall -Wextra --save-temps)
-target_include_directories(${PROJECT_NAME} PUBLIC include src)
-target_link_libraries(${PROJECT_NAME} PRIVATE
+add_executable(adc_demo
+    src/adc_main.cpp
+)
+if(DEFINED ENV{PICO_SDK_PATH})
+    pico_sdk_init()
+endif()
+
+foreach(TARGET ${PROJECT_NAME};adc_demo)
+if(DEFINED ENV{PICO_SDK_PATH})
+    target_link_libraries(${TARGET}
+        PRIVATE
+        pico_stdlib
+        hardware_adc
+        hardware_dma
+    )
+    pico_enable_stdio_usb(${TARGET} 1)
+    pico_enable_stdio_uart(${TARGET} 0)
+    pico_add_extra_outputs(${TARGET})
+    pico_set_binary_type(${TARGET} copy_to_ram)
+endif()
+
+target_compile_options(${TARGET} PRIVATE -g -Wall -Wextra -flto)
+target_link_options(${TARGET} PRIVATE -flto)
+target_include_directories(${TARGET} PUBLIC include src)
+target_link_libraries(${TARGET} PRIVATE
     libhal::$ENV{LIBHAL_PLATFORM_LIBRARY}
     libhal::util
     mp-units::mp-units)
-
-libhal_post_build(${PROJECT_NAME})
-libhal_disassemble(${PROJECT_NAME})
+endforeach()
