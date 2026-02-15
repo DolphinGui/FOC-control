@@ -13,10 +13,12 @@
 #include <fmt/ranges.h>
 #include <stdexcept>
 
-asio::awaitable<void> emit_data(asio::any_io_executor io, Broadcaster& b)
+asio::awaitable<void> emit_data(asio::any_io_executor io,
+                                Broadcaster& b,
+                                bool& alive)
 {
   size_t i = 0;
-  for (;;) {
+  while (alive) {
     float angle = static_cast<float>(std::sin(i * 0.1));
     asio::steady_timer t(io, asio::chrono::milliseconds(10));
     co_await t.async_wait(asio::use_awaitable);
@@ -38,9 +40,9 @@ int main()
     using namespace std::chrono_literals;
     broadcast.emit(AddSetMsg{ "th", "Angle" });
     asio::co_spawn(context.get_executor(),
-                   emit_data(context.get_executor(), broadcast),
+                   emit_data(context.get_executor(), broadcast, s.alive),
                    asio::detached);
-    for (;;) {
+    while (s.alive) {
       context.run();
     }
   } catch (std::runtime_error const& r) {

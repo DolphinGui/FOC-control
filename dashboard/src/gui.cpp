@@ -114,6 +114,10 @@ void GUI::poll(::State& s)
     ImGui_ImplGlfw_Sleep(10);
   }
 
+  if (glfwWindowShouldClose(*this->inner->window)) {
+    s.alive = false;
+  }
+
   ImGui_ImplOpenGL3_NewFrame();
   ImGui_ImplGlfw_NewFrame();
   ImGui::NewFrame();
