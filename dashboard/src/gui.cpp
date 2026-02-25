@@ -1,4 +1,6 @@
 #include "gui.hpp"
+#include "imgui.h"
+#include "io.hpp"
 #include "resource.hpp"
 #include "state.hpp"
 #include <asio/any_io_executor.hpp>
@@ -77,8 +79,7 @@ struct GUI::Internal
     io.ConfigFlags |=
       ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
 
-    ImGui::StyleColorsDark();
-    // ImGui::StyleColorsLight();
+    ImGui::StyleColorsLight();
 
     // Setup scaling
     ImGuiStyle& style = ImGui::GetStyle();
@@ -89,6 +90,10 @@ struct GUI::Internal
     ImGui_ImplOpenGL3_Init("#version 300 es");
   }
 
+  void mainmenu();
+  void serial_popup();
+  asio::awaitable<void> plot(State&);
+
   ~Internal()
   {
     ImPlot::DestroyContext();
@@ -96,6 +101,9 @@ struct GUI::Internal
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
   }
+
+  bool show_demo = true;
+  std::vector<SerialInfo> serials;
 };
 
 GUI::GUI()
@@ -107,7 +115,7 @@ GUI::~GUI()
 {
 }
 
-void GUI::poll(::State& s)
+asio::awaitable<bool> GUI::poll(State& s)
 {
   glfwPollEvents();
   if (glfwGetWindowAttrib(*this->inner->window, GLFW_ICONIFIED) != 0) {
@@ -115,25 +123,17 @@ void GUI::poll(::State& s)
   }
 
   if (glfwWindowShouldClose(*this->inner->window)) {
-    s.alive = false;
+    co_return false;
   }
 
   ImGui_ImplOpenGL3_NewFrame();
   ImGui_ImplGlfw_NewFrame();
   ImGui::NewFrame();
-  if (s.show_demo)
-    ImGui::ShowDemoWindow(&s.show_demo);
+  if (inner->show_demo)
+    ImGui::ShowDemoWindow(&inner->show_demo);
 
-  // plot stuff
-  ImPlot::BeginPlot("A plot");
-  ImPlot::SetupAxes("time", "mag");
-  ImPlot::SetupAxesLimits(0, 200, -1, 1);
-  for (auto&& [_, d] : s.datasets) {
-    ImPlot::PlotLine(d.fullname.c_str(), d.data.data(), d.data.size());
-  }
-  ImPlot::EndPlot();
-
-  // ImPlot::ShowDemoWindow();
+  inner->mainmenu();
+  co_await inner->plot(s);
 
   ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
   ImGui::Render();
@@ -149,4 +149,58 @@ void GUI::poll(::State& s)
   ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
   glfwSwapBuffers(window);
+  co_return true;
+}
+
+void GUI::Internal::mainmenu()
+{
+  if (ImGui::BeginMainMenuBar()) {
+    if (ImGui::Button("Connect Device")) {
+      ImGui::OpenPopup("serial_select");
+      this->serials = list_serial_devices();
+    }
+    serial_popup();
+    ImGui::EndMainMenuBar();
+  }
+}
+
+void GUI::Internal::serial_popup()
+{
+  if (ImGui::BeginPopupModal("serial_select", nullptr)) {
+    ImGui::Text("Select the BLDC motor from the items");
+    int select_index = 0;
+    if (ImGui::BeginListBox("Select Serial")) {
+      int i = 0;
+      for (auto& se : serials) {
+        bool const selected = i == select_index;
+        if (ImGui::Selectable(se.name.c_str(), selected)) {
+          select_index = i;
+        }
+        if (selected)
+          ImGui::SetItemDefaultFocus();
+        i += 1;
+      }
+      ImGui::EndListBox();
+    }
+    if (ImGui::Button("Select")) {
+      printf("selected device %s\n", serials[select_index].name.c_str());
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+  }
+}
+
+asio::awaitable<void> GUI::Internal::plot(State& s)
+{
+  if (ImGui::Begin("Serial Plot")) {
+    ImPlot::BeginPlot("A plot");
+    ImPlot::SetupAxes("time", "mag");
+    ImPlot::SetupAxesLimits(0, 200, -1, 1);
+    auto a = s.list_data();
+    for (auto&& [name, set] : co_await s.list_data()) {
+      ImPlot::PlotLine(name.data(), set->data.data(), set->data.size());
+    }
+    ImPlot::EndPlot();
+  }
+  ImGui::End();
 }
