@@ -166,27 +166,34 @@ void GUI::Internal::mainmenu()
 
 void GUI::Internal::serial_popup()
 {
-  if (ImGui::BeginPopupModal("serial_select", nullptr)) {
-    ImGui::Text("Select the BLDC motor from the items");
-    int select_index = 0;
-    if (ImGui::BeginListBox("Select Serial")) {
-      int i = 0;
-      for (auto& se : serials) {
-        bool const selected = i == select_index;
-        if (ImGui::Selectable(se.name.c_str(), selected)) {
-          select_index = i;
+  if (!this->serials.empty()) {
+    if (ImGui::BeginPopupModal("serial_select", nullptr)) {
+      ImGui::Text("Select the BLDC motor from the items");
+      int select_index = 0;
+      if (ImGui::BeginListBox("Select Serial")) {
+        int i = 0;
+        for (auto& se : serials) {
+          bool const selected = i == select_index;
+          if (ImGui::Selectable(se.name.c_str(), selected)) {
+            select_index = i;
+          }
+          if (selected)
+            ImGui::SetItemDefaultFocus();
+          i += 1;
         }
-        if (selected)
-          ImGui::SetItemDefaultFocus();
-        i += 1;
+        ImGui::EndListBox();
       }
-      ImGui::EndListBox();
+      if (ImGui::Button("Select")) {
+        printf("selected device %s\n", serials[select_index].name.c_str());
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::EndPopup();
     }
-    if (ImGui::Button("Select")) {
-      printf("selected device %s\n", serials[select_index].name.c_str());
-      ImGui::CloseCurrentPopup();
+  } else {
+    if (ImGui::BeginPopup("serial_select")) {
+      ImGui::Text("No devices connected");
+      ImGui::EndPopup();
     }
-    ImGui::EndPopup();
   }
 }
 
