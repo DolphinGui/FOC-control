@@ -61,3 +61,6 @@ class demos(ConanFile):
         self.requires("mp-units/2.4.0")
         if str(self.options.platform).startswith("rp2"):
           self.tool_requires("picotool/2.2.0")
+        if self.options.board.value.startswith("libhal_"):
+            board = self.options.board.value.removeprefix('libhal_').replace('_', '-')
+            self.requires(f"rp-board-header-{board}/latest", visible=True)

@@ -2,3 +2,4 @@ build
 
 # development files
 .kakrc
+imgui.ini

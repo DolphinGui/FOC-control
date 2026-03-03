@@ -38,7 +38,7 @@ find_package(libhal-$ENV{LIBHAL_PLATFORM_LIBRARY} REQUIRED CONFIG)
 find_package(libhal-util REQUIRED CONFIG)
 find_package(mp-units REQUIRED)
 
-add_executable(${PROJECT_NAME}
+add_executable(foc_driver
     src/main.cpp
     src/peripherals.cpp
     src/example_motor.cpp
@@ -48,29 +48,38 @@ add_executable(${PROJECT_NAME}
 add_executable(adc_demo
     src/adc_main.cpp
 )
+add_executable(dash_demo
+    src/dash_main.cpp
+)
 if(DEFINED ENV{PICO_SDK_PATH})
     pico_sdk_init()
 endif()
 
-foreach(TARGET ${PROJECT_NAME};adc_demo)
+foreach(TARGET foc_driver;adc_demo;dash_demo)
 if(DEFINED ENV{PICO_SDK_PATH})
-    target_link_libraries(${TARGET}
-        PRIVATE
-        pico_stdlib
-        hardware_adc
-        hardware_dma
-    )
     pico_enable_stdio_usb(${TARGET} 1)
     pico_enable_stdio_uart(${TARGET} 0)
     pico_add_extra_outputs(${TARGET})
     pico_set_binary_type(${TARGET} copy_to_ram)
+    target_link_libraries(${TARGET} PRIVATE
+        pico_stdlib)
 endif()
-
-target_compile_options(${TARGET} PRIVATE -g -Wall -Wextra -flto)
-target_link_options(${TARGET} PRIVATE -flto)
+target_compile_options(${TARGET} PRIVATE -g -Wall -Wextra -flto=auto)
+target_link_options(${TARGET} PRIVATE -flto=auto)
 target_include_directories(${TARGET} PUBLIC include src)
 target_link_libraries(${TARGET} PRIVATE
     libhal::$ENV{LIBHAL_PLATFORM_LIBRARY}
-    libhal::util
-    mp-units::mp-units)
+    libhal::util)
 endforeach()
+
+target_link_libraries(foc_driver PRIVATE
+    mp-units::mp-units)
+
+target_link_libraries(adc_demo PRIVATE
+    hardware_adc
+    hardware_dma
+    hardware_pwm)
+
+target_link_libraries(dash_demo PRIVATE
+    hardware_adc
+    hardware_dma)
