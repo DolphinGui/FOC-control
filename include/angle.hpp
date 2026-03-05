@@ -87,6 +87,7 @@ struct hfi_observer
   {
   }
 
+  
   static std::pair<radians, saliency> initialization(
     hal::steady_clock& clk,
     triple_hbridge& motor,
@@ -96,7 +97,7 @@ struct hfi_observer
     using namespace mp_units;
     using namespace mp_units::si::unit_symbols;
     using namespace std::chrono_literals;
-    auto rotor = initial_angle(clk, motor, shunts, c);
+    radians rotor = initial_angle(clk, motor, shunts, c);
     // e^6 ~ 99.%, this is probably good enough
     auto settle_time = mp_units::to_chrono_duration(
       (c.phase_inductance / c.phase_resistance * 6.0f).force_in<hal::u64>(ns));
@@ -161,16 +162,16 @@ struct hfi_observer
     auto z_q = hypot(r_s, w_h * L_q);
 
     // see equation 12 of L. Sun
-    auto salience = c.v_in * delta_L * w_h / (2 * z_d * z_q);
+    saliency salience = c.v_in * delta_L * w_h / (2 * z_d * z_q);
 
     motor.set_duty(uvh<mp_units::one>{});
     hal::delay(clk, settle_time);
 
     // 3.4, L. Sun
     if (t_p > t_n) {
-      return { rotor, salience };
+      return std::pair{ rotor, salience };
     } else {
-      return { rotor + 180.0f * deg, salience };
+      return std::pair{ rotor + 180.0f * deg, salience };
     }
   }
 

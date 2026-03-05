@@ -19,14 +19,20 @@ namespace rp = hal::rp;
 
 int main()
 {
+  constexpr bool thirtypin = rp::internal::pin_max == 30;
+  constexpr auto a1 = hal::pin < thirtypin ? 26 : 40 > ;
+  constexpr auto a2 = hal::pin < thirtypin ? 27 : 41 > ;
+  constexpr auto a3 = hal::pin < thirtypin ? 28 : 42 > ;
+  constexpr auto a4 = hal::pin < thirtypin ? 29 : 43 > ;
+
   using namespace std::chrono_literals;
   auto out = rp::stdio_serial();
   auto clk = rp::clock();
   auto dwt_clk = hal::cortex_m::dwt_counter(SYS_CLK_HZ);
   auto led = rp::output_pin(hal::pin<7>);
   bool on = false;
-  auto adc = rp::nonstandard::adc16_pack(
-    hal::pin<26>, hal::pin<27>, hal::pin<28>, hal::pin<29>);
+
+  auto adc = rp::nonstandard::adc16_pack(a1, a2, a3, a4);
   std::array<hal::u16, 4> readings;
   auto read_session = adc.async();
 
