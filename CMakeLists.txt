@@ -48,14 +48,20 @@ add_executable(foc_driver
 add_executable(adc_demo
     src/adc_main.cpp
 )
+
 add_executable(dash_demo
     src/dash_main.cpp
 )
+
+add_executable(encoder_demo
+    src/encoder_main.cpp
+)
+
 if(DEFINED ENV{PICO_SDK_PATH})
     pico_sdk_init()
 endif()
 
-foreach(TARGET foc_driver;adc_demo;dash_demo)
+foreach(TARGET foc_driver;adc_demo;dash_demo;encoder_demo)
 if(DEFINED ENV{PICO_SDK_PATH})
     pico_enable_stdio_usb(${TARGET} 1)
     pico_enable_stdio_uart(${TARGET} 0)
@@ -83,3 +89,8 @@ target_link_libraries(adc_demo PRIVATE
 target_link_libraries(dash_demo PRIVATE
     hardware_adc
     hardware_dma)
+
+
+target_link_libraries(encoder_demo PRIVATE
+    hardware_i2c
+    mp-units::mp-units)
