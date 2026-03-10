@@ -38,6 +38,35 @@ find_package(libhal-$ENV{LIBHAL_PLATFORM_LIBRARY} REQUIRED CONFIG)
 find_package(libhal-util REQUIRED CONFIG)
 find_package(mp-units REQUIRED)
 
+if(DEFINED ENV{PICO_SDK_PATH})
+    pico_sdk_init()
+endif()
+
+add_executable(adc_demo
+    src/adc_main.cpp
+)
+
+target_link_libraries(adc_demo PRIVATE
+    hardware_adc
+    hardware_dma
+    hardware_pwm)
+
+add_executable(encoder_demo
+    src/encoder_main.cpp
+)
+
+target_link_libraries(encoder_demo PRIVATE
+    hardware_i2c)
+
+add_executable(dash_demo
+    src/dash_demo.cpp
+)
+
+
+
+set(TARGETS adc_demo;encoder_demo;dash_demo)
+
+if(PICO_BOARD STREQUAL "micromod-rp2350")
 add_executable(foc_driver
     src/main.cpp
     src/peripherals.cpp
@@ -45,27 +74,26 @@ add_executable(foc_driver
     platforms/$ENV{LIBHAL_PLATFORM}.cpp
 )
 
-add_executable(adc_demo
-    src/adc_main.cpp
+add_executable(simple_driver
+    src/simple_main.cpp
 )
 
 add_executable(speed_demo
     src/speed_main.cpp
 )
 
-add_executable(encoder_demo
-    src/encoder_main.cpp
-)
+target_link_libraries(speed_demo PRIVATE
+    hardware_pwm
+    hardware_dma)
 
-add_executable(simple_driver
-    src/simple_main.cpp
-)
+target_link_libraries(simple_driver PRIVATE
+    hardware_i2c
+    hardware_pwm)
 
-if(DEFINED ENV{PICO_SDK_PATH})
-    pico_sdk_init()
+list(TARGETS APPEND foc_driver simple_driver speed_demo)
 endif()
 
-foreach(TARGET foc_driver;adc_demo;speed_demo;encoder_demo;simple_driver)
+foreach(TARGET ${TARGETS})
 if(DEFINED ENV{PICO_SDK_PATH})
     pico_enable_stdio_usb(${TARGET} 1)
     pico_enable_stdio_uart(${TARGET} 0)
@@ -80,23 +108,3 @@ target_link_libraries(${TARGET} PRIVATE
     libhal::$ENV{LIBHAL_PLATFORM_LIBRARY}
     libhal::util)
 endforeach()
-
-target_link_libraries(foc_driver PRIVATE
-    mp-units::mp-units)
-
-target_link_libraries(adc_demo PRIVATE
-    hardware_adc
-    hardware_dma
-    hardware_pwm)
-
-target_link_libraries(speed_demo PRIVATE
-    hardware_pwm
-    hardware_dma)
-
-target_link_libraries(encoder_demo PRIVATE
-    hardware_i2c
-    mp-units::mp-units)
-
-target_link_libraries(simple_driver PRIVATE
-    hardware_i2c
-    hardware_pwm)

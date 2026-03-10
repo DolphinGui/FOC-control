@@ -4,6 +4,7 @@
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/rp/i2c.hpp>
 #include <libhal-arm-mcu/rp/output_pin.hpp>
+#include <libhal-arm-mcu/rp/rp.hpp>
 #include <libhal-arm-mcu/rp/serial.hpp>
 #include <libhal-arm-mcu/rp/time.hpp>
 #include <libhal-util/serial.hpp>
@@ -37,7 +38,7 @@ int main()
   auto out = rp::stdio_serial();
   auto clk = rp::clock();
   auto dwt_clk = hal::cortex_m::dwt_counter(rp::core_clock());
-  auto led = rp::output_pin(hal::pin<46>);
+  auto led = rp::output_pin(hal::pin<7>);
   auto i2c = rp::i2c(hal::pin<16>, hal::pin<17>, hal::bus<0>);
   i2c.configure({ .clock_rate = 1'000'000 });
   bool led_on = false;
