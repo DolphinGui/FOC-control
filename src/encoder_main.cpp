@@ -1,3 +1,4 @@
+#include "base64.hpp"
 #include <array>
 #include <cstdint>
 #include <libhal-arm-mcu/dwt_counter.hpp>
@@ -21,12 +22,12 @@ float get_angle(hal::i2c& i2c)
   return angle / float(0xfff) * 360;
 }
 
-float get_gain(hal::i2c& i2c)
+uint8_t get_gain(hal::i2c& i2c)
 {
   std::array<uint8_t const, 1> reg{ 0x1a };
   std::array<uint8_t, 1> data = { 0xff };
   i2c.transaction(addr, reg, data);
-  return data[0] / 255.f;
+  return data[0];
 }
 
 int main()
@@ -44,10 +45,13 @@ int main()
     led.level(led_on);
     led_on = !led_on;
     try {
-      hal::print<50>(out, "Angle: %.02f\n", get_angle(i2c));
-      hal::print<50>(out, "Gain: %.02f\n", get_gain(i2c));
+      float angle = get_angle(i2c);
+      uint8_t gain = get_gain(i2c);
+      auto [data, len] = b64::encode_message(angle, gain);
+      out.write(std::span(reinterpret_cast<uint8_t*>(data.data()), len));
     } catch (hal::exception const& e) {
-      hal::print<50>(out, "i2c failed with code %d\n", e.error_code());
+      std::array<uint8_t, 4> err{ 'E', 'R', 'R', '\n' };
+      out.write(err);
     }
     hal::delay(dwt_clk, 1s);
   }

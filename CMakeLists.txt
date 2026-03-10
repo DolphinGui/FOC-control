@@ -57,11 +57,15 @@ add_executable(encoder_demo
     src/encoder_main.cpp
 )
 
+add_executable(simple_driver
+    src/simple_main.cpp
+)
+
 if(DEFINED ENV{PICO_SDK_PATH})
     pico_sdk_init()
 endif()
 
-foreach(TARGET foc_driver;adc_demo;speed_demo;encoder_demo)
+foreach(TARGET foc_driver;adc_demo;speed_demo;encoder_demo;simple_driver)
 if(DEFINED ENV{PICO_SDK_PATH})
     pico_enable_stdio_usb(${TARGET} 1)
     pico_enable_stdio_uart(${TARGET} 0)
@@ -92,3 +96,7 @@ target_link_libraries(speed_demo PRIVATE
 target_link_libraries(encoder_demo PRIVATE
     hardware_i2c
     mp-units::mp-units)
+
+target_link_libraries(simple_driver PRIVATE
+    hardware_i2c
+    hardware_pwm)
