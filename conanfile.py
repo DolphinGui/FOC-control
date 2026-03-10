@@ -23,11 +23,7 @@ class demos(ConanFile):
     python_requires = "libhal-bootstrap/[^4.0.0]"
     python_requires_extend = "libhal-bootstrap.demo"
 
-    options = {
-        "platform": ["ANY"],
-        "variant": [None, "ANY"],
-        "board": [None, "ANY"]
-    }
+    options = {"platform": ["ANY"], "variant": [None, "ANY"], "board": [None, "ANY"]}
 
     default_options = {
         "platform": "ANY",
@@ -35,12 +31,10 @@ class demos(ConanFile):
         "board": None,
     }
 
-
     def configure(self):
         # self.options["mp-units/*"].freestanding = True
         self.options["mp-units/*"].contracts = "none"
         self.options["mp-units/*"].std_format = True
-
 
     def generate(self):
         virt = VirtualBuildEnv(self)
@@ -60,7 +54,7 @@ class demos(ConanFile):
         # bootstrap.module.add_demo_requirements(self)
         self.requires("mp-units/2.4.0")
         if str(self.options.platform).startswith("rp2"):
-          self.tool_requires("picotool/2.2.0")
+            self.tool_requires("picotool/2.2.0")
         if self.options.board.value.startswith("libhal_"):
-            board = self.options.board.value.removeprefix('libhal_').replace('_', '-')
+            board = self.options.board.value.removeprefix("libhal_").replace("_", "-")
             self.requires(f"rp-board-header-{board}/latest", visible=True)
