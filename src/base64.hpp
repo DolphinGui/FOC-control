@@ -1,5 +1,8 @@
 #pragma once
 
+#include "conststr.hpp"
+#include <bit>
+#include <concepts>
 #include <cstdint>
 #include <cstring>
 #include <span>
@@ -72,9 +75,9 @@ constexpr std::vector<uint8_t> decode(std::span<char const> input)
 }
 
 template<size_t size>
-std::span<char> encode(std::span<uint8_t, size> input,
-                       std::span<char, 4 * (size + 2) / 3 + 1> output,
-                       char terminator = '\n')
+constexpr std::span<char> encode(std::span<uint8_t, size> input,
+                                 std::span<char, 4 * (size + 2) / 3 + 1> output,
+                                 char terminator = '\n')
   requires(size != std::dynamic_extent)
 {
   size_t in_i = 0;
@@ -113,19 +116,74 @@ std::span<char> encode(std::span<uint8_t, size> input,
 
   return output.subspan(0, out_i);
 }
+
+template<typename T>
+constexpr void memcopy(uint8_t* dst, T src)
+{
+  auto a = std::bit_cast<std::array<uint8_t, sizeof(src)>>(src);
+  for (size_t i = 0; i < sizeof(src); ++i) {
+    dst[i] = a[i];
+  }
+}
+
+template<typename... Args>
+constexpr auto data_array(Args... args)
+{
+  std::array<uint8_t, (sizeof(Args) + ...)> data{};
+  size_t offset = 0;
+  ((memcopy(data.data() + offset, args), offset += sizeof(args)), ...);
+  return data;
+}
+
 template<std::regular... Args>
 constexpr auto encode_message(Args... args)
-  -> std::pair<std::array<char, 4 * ((sizeof(Args) + ...) + 2) / 3 + 1>, size_t>
+  -> std::pair<std::array<char, 4 * (4 + (sizeof(Args) + ...) + 2) / 3 + 1>,
+               size_t>
 {
-  std::array<uint8_t, (sizeof(Args) + ...)> data;
-  size_t offset = 0;
-  ((std::memcpy(
-      data.data() + offset, reinterpret_cast<uint8_t*>(&args), sizeof(args)),
-    offset += sizeof(args)),
-   ...);
+  size_t magic = 0x7adada7a;
+  std::array<uint8_t, 4 + (sizeof(Args) + ...)> data =
+    data_array(magic, args...);
   std::array<char, 4 * (data.size() + 2) / 3 + 1> result;
   size_t len = encode(std::span(data), std::span(result)).size();
   return { result, len };
+}
+
+/*
+ *
+ */
+
+template<typename>
+struct typeparam;
+
+template<std::floating_point F>
+struct typeparam<F>
+{
+  constexpr static char type = 'f';
+  constexpr static uint8_t size = sizeof(F);
+};
+
+template<std::integral I>
+struct typeparam<I>
+{
+  constexpr static char type = 'i';
+  constexpr static uint8_t size = sizeof(I);
+};
+
+template<typename p, auto name>
+struct parameter
+{
+  using param = typeparam<p>;
+  constexpr static auto serialized = data_array(param::type, param::size, name);
+};
+
+template<typename... Params>
+constexpr auto create_schema()
+{
+  size_t magic = 0xdec0c0de;
+  auto data = data_array(magic, Params::serialized..., '\n');
+  std::array<char, 4 * (data.size() + 2) / 3 + 1> result{};
+  size_t len = encode(std::span(data), std::span(result)).size();
+  return std::pair{ result, len };
 }
 
 }  // namespace b64
