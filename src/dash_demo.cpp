@@ -62,9 +62,9 @@ struct read_until : co::Task<std::span<hal::byte>>
 
 using namespace util::string_literal;
 using namespace std::chrono_literals;
-constexpr auto schema = b64::create_schema<b64::parameter<float, "a"_c>,
-                                           b64::parameter<float, "b"_c>,
-                                           b64::parameter<float, "c"_c>>();
+constexpr auto schema = b64::create_schema<b64::parameter<float, "phase A"_c>,
+                                           b64::parameter<float, "phase B"_c>,
+                                           b64::parameter<float, "phase C"_c>>();
 
 static co::Coroutine<void> blinky(hal::steady_clock& clk)
 {
@@ -118,6 +118,6 @@ int main()
       sinf(angle), sinf(angle - phase_offset), sinf(angle + phase_offset));
     out.write(std::span(reinterpret_cast<uint8_t*>(data.data()), len));
 
-    rp::sleep(100ms);
+    rp::sleep(1ms);
   }
 }

@@ -7,6 +7,7 @@
 #include <asio/steady_timer.hpp>
 #include <asio/use_awaitable.hpp>
 #include <cstdio>
+#include <fmt/base.h>
 #include <memory>
 #include <stdexcept>
 
@@ -48,6 +49,7 @@ struct GUI::Internal
   using Window = Resource<GLFWwindow*, decltype(deleter)>;
   GLFW g;
   Window window;
+  float y_min = -1.0, y_max = 1.0;
 
   Internal()
   {
@@ -199,15 +201,30 @@ void GUI::Internal::serial_popup(State& s)
 
 asio::awaitable<void> GUI::Internal::plot(State& s)
 {
+  using namespace std::chrono_literals;
   if (ImGui::Begin("Serial Plot")) {
-    ImPlot::BeginPlot("A plot");
-    ImPlot::SetupAxes("time", "mag");
-    ImPlot::SetupAxesLimits(0, 200, -1, 1);
-    auto a = s.list_data();
-    for (auto&& [name, set] : co_await s.list_data()) {
-      ImPlot::PlotLine(name.data(), set->data.data(), set->data.size());
+    if (ImPlot::BeginPlot("A plot")) {
+      auto [before, now] = Dataset::get_timespan(10s);
+      ImPlot::SetupAxes("time", "mag", ImPlotAxisFlags_NoTickLabels);
+      ImPlot::SetupAxisLimits(ImAxis_X1, before, now, ImGuiCond_Always);
+      ImPlot::SetupAxisLimits(ImAxis_Y1, y_min, y_max);
+      ImPlot::SetupAxisFormat(
+        ImAxis_X1, +[](double val, char* buf, int buflen, void*) {
+          auto time = Dataset::Timestamp(Dataset::Duration(val));
+          auto r = fmt::format_to_n(buf, buflen - 1, "{:%H:%M:%S}", time);
+          buf[r.size] = 0;
+          return static_cast<int>(r.size);
+        });
+      for (auto&& [name, set] : co_await s.list_data()) {
+        auto data = set->get_datapoints();
+        ImPlotSpec spec = {};
+        spec.Stride = sizeof(Dataset::Datapoint);
+        spec.Offset = set->offset();
+        ImPlot::PlotLine(
+          name.data(), &data[0].time, &data[0].data, data.size(), spec);
+      }
+      ImPlot::EndPlot();
     }
-    ImPlot::EndPlot();
   }
   ImGui::End();
 }

@@ -46,14 +46,6 @@ struct State::Inner
     }
   }
 
-  void yscale(std::string_view sv, float max)
-  {
-    auto d = this->datasets.find(sv);
-    if (d != datasets.end()) {
-      d->second.y_range = max;
-    }
-  }
-
   void erase_set(std::string_view set)
   {
     auto d = this->datasets.find(set);
@@ -102,14 +94,12 @@ void State::xscale(size_t max)
 {
   asio::post(strand, [=, this] { this->inner_state->xscale(max); });
 }
-void State::yscale(std::string_view data, float max)
-{
-  asio::post(strand, [=, this] { this->inner_state->yscale(data, max); });
-}
+
 void State::erase_set(std::string_view data)
 {
   asio::post(strand, [=, this] { this->inner_state->erase_set(data); });
 }
+
 void State::insert_data(std::string_view set, double data)
 {
   asio::post(strand, [=, this] { this->inner_state->insert_data(set, data); });
