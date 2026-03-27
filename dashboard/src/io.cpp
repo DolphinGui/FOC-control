@@ -136,8 +136,8 @@ struct DeviceManager::Inner
                                  sizeof(b64::data_magic)) == 0) {
             read_msg(std::span(d).subspan(2));
           }
-          // if schema magic doesn't match, it's probably just an invalid packet
-
+          // if schema magic doesn't match, it's probably just an invalid
+          // packet
         } else {
           std::cerr << "Could not read due to error " << ec << "\n";
         }
@@ -164,7 +164,6 @@ struct DeviceManager::Inner
     schema.clear();
     schema_size = 0;
     while (i < data.size()) {
-      std::cerr << "i vs size: " << i << ", " << data.size() << '\n';
       char type = data[i];
       uint8_t size = data[i + 1];
       size_t namelen =
@@ -175,8 +174,6 @@ struct DeviceManager::Inner
       }
       auto name =
         std::string(reinterpret_cast<char*>(data.data() + i + 2), namelen);
-      std::cerr << "Reading schema item type " << type << " size " << int(size)
-                << ": " << name << '\n';
       schema.emplace_back(type, size, name);
       schema_size += size;
       i += 2 + namelen + 1;
