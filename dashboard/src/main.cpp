@@ -11,23 +11,9 @@
 #include <asio/signal_set.hpp>
 #include <asio/steady_timer.hpp>
 #include <asio/use_awaitable.hpp>
-#include <cmath>
 #include <fmt/base.h>
 #include <fmt/ranges.h>
 #include <stdexcept>
-
-asio::awaitable<void> emit_data(asio::io_context& io, State& s)
-{
-  using namespace asio;
-  size_t i = 0;
-  for (;;) {
-    float angle = static_cast<float>(std::sin(i * 0.1));
-    steady_timer t(io, chrono::milliseconds(20));
-    co_await t.async_wait(use_awaitable);
-    s.insert_data("velocity", angle);
-    i++;
-  }
-}
 
 asio::awaitable<void> poll(asio::io_context& io, GUI& g, State& s)
 {
@@ -46,8 +32,6 @@ int main()
     State s(context);
     GUI g;
     using namespace std::chrono_literals;
-    asio::co_spawn(context, emit_data(context, s), asio::detached);
-
     asio::co_spawn(context, poll(context, g, s), asio::detached);
 
     asio::signal_set signals(context, SIGINT, SIGTERM);

@@ -1,6 +1,7 @@
 #include "state.hpp"
 #include "gui.hpp"
 #include <algorithm>
+#include <asio/awaitable.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/dispatch.hpp>
@@ -33,12 +34,15 @@ struct string_hash
 
 struct State::Inner
 {
-  Inner() = default;
+  Inner(asio::io_context& io)
+    : ctx(&io)
+  {
+  }
 
   void xscale(size_t size)
   {
     for (auto&& [_, v] : datasets) {
-      v.data.resize(size, 0.0);
+      v.resize(size);
     }
   }
 
@@ -79,16 +83,17 @@ struct State::Inner
     for (auto&& [name, data] : datasets) {
       results.emplace_back(name, &data);
     }
+    std::sort(results.begin(), results.end());
     return results;
   }
 
-private:
   std::unordered_map<std::string, Dataset, string_hash, std::equal_to<>>
     datasets;
+  asio::io_context* ctx;
 };
 
 State::State(asio::io_context& e)
-  : inner_state(std::make_unique<Inner>())
+  : inner_state(std::make_unique<Inner>(e))
   , strand(asio::make_strand(e))
 {
 }
@@ -105,7 +110,7 @@ void State::erase_set(std::string_view data)
 {
   asio::post(strand, [=, this] { this->inner_state->erase_set(data); });
 }
-void State::insert_data(std::string_view set, float data)
+void State::insert_data(std::string_view set, double data)
 {
   asio::post(strand, [=, this] { this->inner_state->insert_data(set, data); });
 }
@@ -115,4 +120,12 @@ State::list_data() const
 {
   co_await asio::dispatch(strand, asio::use_awaitable);
   co_return this->inner_state->list_data();
+}
+
+void State::connect_device(SerialInfo const& info)
+{
+  inner_state->datasets.clear();
+  device.connect(*inner_state->ctx, info, [this](std::string_view s, double f) {
+    this->insert_data(s, f);
+  });
 }

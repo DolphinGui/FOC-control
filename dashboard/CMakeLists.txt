@@ -19,6 +19,8 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 
 add_executable(foc_dash src/main.cpp src/gui.cpp src/state.cpp src/io.cpp)
 
+target_include_directories(foc_dash PRIVATE ../src)
+
 add_library(
     imgui
     src/imgui/imgui_demo.cpp

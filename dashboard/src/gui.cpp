@@ -90,8 +90,8 @@ struct GUI::Internal
     ImGui_ImplOpenGL3_Init("#version 300 es");
   }
 
-  void mainmenu();
-  void serial_popup();
+  void mainmenu(State& s);
+  void serial_popup(State& s);
   asio::awaitable<void> plot(State&);
 
   ~Internal()
@@ -132,7 +132,7 @@ asio::awaitable<bool> GUI::poll(State& s)
   if (inner->show_demo)
     ImGui::ShowDemoWindow(&inner->show_demo);
 
-  inner->mainmenu();
+  inner->mainmenu(s);
   co_await inner->plot(s);
 
   ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
@@ -152,19 +152,19 @@ asio::awaitable<bool> GUI::poll(State& s)
   co_return true;
 }
 
-void GUI::Internal::mainmenu()
+void GUI::Internal::mainmenu(State& s)
 {
   if (ImGui::BeginMainMenuBar()) {
     if (ImGui::Button("Connect Device")) {
       ImGui::OpenPopup("serial_select");
       this->serials = list_serial_devices();
     }
-    serial_popup();
+    serial_popup(s);
     ImGui::EndMainMenuBar();
   }
 }
 
-void GUI::Internal::serial_popup()
+void GUI::Internal::serial_popup(State& s)
 {
   if (!this->serials.empty()) {
     if (ImGui::BeginPopupModal("serial_select", nullptr)) {
@@ -184,7 +184,7 @@ void GUI::Internal::serial_popup()
         ImGui::EndListBox();
       }
       if (ImGui::Button("Select")) {
-        printf("selected device %s\n", serials[select_index].name.c_str());
+        s.connect_device(serials[select_index]);
         ImGui::CloseCurrentPopup();
       }
       ImGui::EndPopup();

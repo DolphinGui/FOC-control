@@ -135,22 +135,17 @@ constexpr auto data_array(Args... args)
   return data;
 }
 
+constexpr uint16_t data_magic = 0x7ada;
 template<std::regular... Args>
 constexpr auto encode_message(Args... args)
-  -> std::pair<std::array<char, 4 * (4 + (sizeof(Args) + ...) + 2) / 3 + 1>,
+  -> std::pair<std::array<char, 4 * (2 + (sizeof(Args) + ...) + 2) / 3 + 1>,
                size_t>
 {
-  size_t magic = 0x7adada7a;
-  std::array<uint8_t, 4 + (sizeof(Args) + ...)> data =
-    data_array(magic, args...);
+  auto data = data_array(data_magic, args...);
   std::array<char, 4 * (data.size() + 2) / 3 + 1> result;
   size_t len = encode(std::span(data), std::span(result)).size();
   return { result, len };
 }
-
-/*
- *
- */
 
 template<typename>
 struct typeparam;
@@ -176,14 +171,41 @@ struct parameter
   constexpr static auto serialized = data_array(param::type, param::size, name);
 };
 
+constexpr uint16_t schema_magic = 0xdec0;
 template<typename... Params>
 constexpr auto create_schema()
 {
-  size_t magic = 0xdec0c0de;
-  auto data = data_array(magic, Params::serialized..., '\n');
+  auto data = data_array(schema_magic, Params::serialized...);
   std::array<char, 4 * (data.size() + 2) / 3 + 1> result{};
   size_t len = encode(std::span(data), std::span(result)).size();
   return std::pair{ result, len };
 }
+
+struct runtime_param
+{
+  enum data_type
+  {
+    integer,
+    floating
+  };
+  data_type type;
+  size_t size;
+  std::string name;
+  runtime_param(char type, uint8_t size, std::string name)
+    : size(size)
+    , name(name)
+  {
+    switch (type) {
+      case 'i':
+        this->type = integer;
+        break;
+      case 'f':
+        this->type = floating;
+        break;
+      default:
+        throw std::runtime_error("Unknown schema paramter type");
+    }
+  }
+};
 
 }  // namespace b64
