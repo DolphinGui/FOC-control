@@ -35,6 +35,7 @@ class demos(ConanFile):
         # self.options["mp-units/*"].freestanding = True
         self.options["mp-units/*"].contracts = "none"
         self.options["mp-units/*"].std_format = True
+        self.options["libhal-arm-mcu/*"].use_libhal_exceptions = False
 
     def generate(self):
         virt = VirtualBuildEnv(self)
@@ -49,12 +50,11 @@ class demos(ConanFile):
 
     def requirements(self):
         self.requires("libhal-util/[^5.4.0]")
-        self.requires("libhal-arm-mcu/latest")
+        self.requires("libhal-arm-mcu/1.22.0")
         # bootstrap = self.python_requires["libhal-bootstrap"]
         # bootstrap.module.add_demo_requirements(self)
         self.requires("mp-units/2.4.0")
         if str(self.options.platform).startswith("rp2"):
             self.tool_requires("picotool/2.2.0")
         if self.options.board.value.startswith("libhal_"):
-            board = self.options.board.value.removeprefix("libhal_").replace("_", "-")
-            self.requires(f"rp-board-header-{board}/latest", visible=True)
+            self.requires("libhal-micromod/latest")
